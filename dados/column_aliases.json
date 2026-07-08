@@ -1,0 +1,84 @@
+{
+  "codigo": [
+    "codigo",
+    "código",
+    "cod",
+    "cod.",
+    "cod conta",
+    "cod. conta"
+  ],
+  "descricao": [
+    "descricao",
+    "descrição",
+    "historico",
+    "histórico",
+    "nome",
+    "conta",
+    "conta contabil",
+    "conta contábil",
+    "conta descricao",
+    "conta descrição",
+    "titulo",
+    "título"
+  ],
+  "saldo_anterior": [
+    "saldo anterior",
+    "saldo ant",
+    "saldo ant.",
+    "sld anterior",
+    "saldo inicial"
+  ],
+  "debito": [
+    "debito",
+    "débito",
+    "deb",
+    "deb.",
+    "valor debito",
+    "valor débito"
+  ],
+  "credito": [
+    "credito",
+    "crédito",
+    "cred",
+    "cred.",
+    "valor credito",
+    "valor crédito"
+  ],
+  "saldo_atual": [
+    "saldo atual",
+    "saldo final",
+    "saldo",
+    "sld atual",
+    "sld final",
+    "saldo final atual"
+  ],
+  "natureza": [
+    "natureza",
+    "nat",
+    "tipo",
+    "dc",
+    "d/c"
+  ],
+  "data": [
+    "data",
+    "dt",
+    "dt.",
+    "data lancamento",
+    "data lançamento",
+    "data movimento"
+  ],
+  "valor": [
+    "valor",
+    "vlr",
+    "vlr.",
+    "montante",
+    "quantia"
+  ],
+  "categoria": [
+    "categoria",
+    "tipo despesa",
+    "classificacao",
+    "classificação",
+    "grupo"
+  ]
+}

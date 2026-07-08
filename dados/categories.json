@@ -1,0 +1,81 @@
+{
+  "ENERGIA": [
+    "energia eletrica",
+    "energia elétrica",
+    "conta de luz",
+    "cpfl",
+    "enel",
+    "cemig",
+    "light",
+    "eletropaulo",
+    "copel",
+    "eletricidade"
+  ],
+  "COMBUSTIVEL": [
+    "gasolina",
+    "diesel",
+    "etanol",
+    "combustivel",
+    "combustível",
+    "posto",
+    "abastecimento",
+    "alcool",
+    "álcool"
+  ],
+  "ALUGUEL": [
+    "aluguel",
+    "locacao",
+    "locação",
+    "rent"
+  ],
+  "SALARIOS": [
+    "salario",
+    "salário",
+    "folha de pagamento",
+    "pro labore",
+    "pró labore",
+    "ordenados",
+    "remuneracao",
+    "remuneração"
+  ],
+  "IMPOSTOS": [
+    "imposto",
+    "tributo",
+    "icms",
+    "iss",
+    "irpj",
+    "csll",
+    "pis",
+    "cofins",
+    "simples nacional",
+    "darf"
+  ],
+  "FORNECEDORES": [
+    "fornecedor",
+    "fornecedores",
+    "compra",
+    "aquisicao",
+    "aquisição"
+  ],
+  "RECEITAS": [
+    "receita",
+    "venda",
+    "faturamento",
+    "servicos prestados",
+    "serviços prestados"
+  ],
+  "BANCOS": [
+    "banco",
+    "caixa",
+    "conta corrente",
+    "aplicacao financeira",
+    "aplicação financeira"
+  ],
+  "DEPRECIACAO": [
+    "depreciacao",
+    "depreciação",
+    "amortizacao",
+    "amortização"
+  ],
+  "OUTROS": []
+}
