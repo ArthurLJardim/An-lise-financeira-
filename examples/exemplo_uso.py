@@ -5,6 +5,12 @@ produzir, usando os CSVs sintéticos desta pasta, e mostra a saída que a
 interface (Miguel) e o módulo de recomendações (João Thiago) devem
 consumir via `resultado.to_dict()`.
 
+Os dados sintéticos representam lançamentos já contabilizados, no nível
+de detalhe de um balancete/DRE real (conta contábil, fornecedor com razão
+social, encargos de folha separados etc.) — não uma lista de compras
+avulsas/não contabilizadas. É esse o tipo de entrada que o motor espera
+receber depois que um balancete é lido e tratado.
+
 Rodar a partir da raiz do projeto:
     python examples/exemplo_uso.py
 """

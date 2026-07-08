@@ -5,32 +5,70 @@ e os demais módulos do projeto. Enquanto os módulos de Eduardo, João Thiago e
 Miguel não existem, o motor foi construído contra este contrato — qualquer
 implementação futura que o respeite deve integrar sem alterações no `motor_analise`.
 
-## 1. Entrada — vindo do módulo de tratamento de dados (Eduardo)
+## 1. Entrada real — o que a empresa envia
 
-O motor espera um `pandas.DataFrame` de **lançamentos financeiros**, um por
-linha, com as colunas abaixo.
+A empresa **não** prepara uma planilha de lançamentos já categorizados. O que ela
+envia é o **balancete** (ou DRE) exportado direto do sistema contábil — em PDF ou
+Excel —, no formato tradicional de plano de contas:
+
+| Coluna                | Descrição                                                          |
+|------------------------|---------------------------------------------------------------------|
+| `código`               | Código da conta contábil (ex.: `1`, `164`, `1008`)                  |
+| `descrição da conta`   | Nome da conta (ex.: "FORNECEDORES", "ENERGIA ELÉTRICA", "SERVIÇOS PRESTADOS") |
+| `saldo anterior`       | Saldo da conta no início do período                                 |
+| `débito` / `crédito`   | Movimentação da conta dentro do período                             |
+| `saldo atual`          | Saldo final, com natureza `D` (devedor) ou `C` (credor)             |
+
+Um balancete mistura **contas sintéticas** (totalizadoras, ex.: `PASSIVO CIRCULANTE`)
+e **contas analíticas** (as que recebem lançamento de fato, ex.: um fornecedor
+específico ou "SERVIÇOS PRESTADOS"). Só as contas analíticas do período representam
+receita/despesa reais; as sintéticas são apenas a soma das contas abaixo delas e
+não devem ser contadas — contar as duas geraria valores duplicados.
+
+## 2. Tratamento — do balancete para lançamentos internos (Eduardo, `dados/`)
+
+É responsabilidade do módulo de tratamento de dados (Eduardo):
+
+1. Ler o balancete (PDF ou Excel) enviado pela empresa.
+2. Identificar as contas analíticas do período (ignorando as sintéticas/totalizadoras).
+3. Classificar cada conta em receita ou despesa e em uma categoria padronizada
+   (`mercadorias`, `energia`, `aluguel`, `folha`, `transporte`, `servicos`, `outros`),
+   a partir da descrição da conta e/ou do nome do fornecedor.
+4. Gerar o `pandas.DataFrame` de **lançamentos** descrito na seção 3 — esse sim é o
+   contrato interno consumido pelo motor.
+
+Enquanto esse tratamento automático não existe, [`analisar_documento.py`](../analisar_documento.py)
+só aceita o arquivo já convertido para o formato da seção 3 (`.xlsx`/`.csv`) — é uma
+limitação temporária do CLI, não o contrato definitivo do bot. O objetivo final é o
+usuário apontar o script direto para o PDF/Excel do balancete.
+
+## 3. Contrato interno — lançamentos (entrada do `motor_analise`)
+
+O motor espera um `pandas.DataFrame` de **lançamentos financeiros**, já tratados
+a partir do balancete, um por linha, com as colunas abaixo.
 
 ### Colunas obrigatórias
 
 | Coluna       | Tipo               | Descrição                                                        |
 |--------------|--------------------|--------------------------------------------------------------------|
-| `data`       | `datetime` ou `str` (`YYYY-MM-DD`) | Data do lançamento                                 |
+| `data`       | `datetime` ou `str` (`YYYY-MM-DD`) | Data do lançamento (quando o balancete não traz data por conta, usar a data de fechamento do período) |
 | `categoria`  | `str`              | Categoria padronizada (ver lista abaixo)                          |
-| `fornecedor` | `str`              | Nome do fornecedor/beneficiário                                   |
+| `fornecedor` | `str`              | Nome do fornecedor/beneficiário (a conta analítica do balancete)  |
 | `valor`      | `float`            | Valor do gasto, sempre positivo                                   |
 
 ### Colunas opcionais
 
 | Coluna           | Tipo    | Descrição                                          |
-|------------------|---------|-----------------------------------------------------|
-| `tipo`           | `str`   | `"receita"` ou `"despesa"`. Ausente = tratado como `"despesa"` (compatível com o uso original de compras). Necessário para o motor calcular lucro/prejuízo. |
-| `produto`        | `str`   | Produto/item específico do lançamento               |
-| `descricao`      | `str`   | Texto livre / histórico do lançamento                |
+|------------------|---------|-------------------------------------------------------|
+| `tipo`           | `str`   | `"receita"` ou `"despesa"`. Ausente = tratado como `"despesa"`. Necessário para o motor calcular lucro/prejuízo. |
+| `produto`        | `str`   | Produto/item específico do lançamento, quando existir (balancete normalmente não tem esse nível de detalhe) |
+| `descricao`      | `str`   | Nome da conta contábil de origem no balancete            |
 | `forma_pagamento`| `str`   | Ex.: boleto, pix, cartão                             |
 
 Para lançamentos de receita, a coluna `fornecedor` representa o
-cliente/canal de venda (ex.: "Vendas Balcão"), não um fornecedor de fato —
-o nome da coluna é reaproveitado para manter um único formato de tabela.
+cliente/canal de venda (ex.: "Clientes - Prestação de Serviços"), não um
+fornecedor de fato — o nome da coluna é reaproveitado para manter um único
+formato de tabela.
 
 ### Categorias padrão reconhecidas
 
@@ -47,14 +85,15 @@ antes de montar o DataFrame, se necessário.
 - **Orçamento/limites** — `pandas.DataFrame` com colunas `categoria`, `limite`.
   Define o teto de gasto esperado por categoria no período.
 - **Histórico** — `pandas.DataFrame` no mesmo formato dos lançamentos, referente
-  a um período anterior. Usado para comparar a variação atual contra o passado
-  quando não há orçamento definido (ou em conjunto com ele).
+  a um período anterior (tipicamente o balancete do mês/ano anterior, já tratado
+  do mesmo jeito). Usado para comparar a variação atual contra o passado quando
+  não há orçamento definido (ou em conjunto com ele).
 
 Pelo menos uma das duas deve ser passada para o motor gerar variações e
 alertas; sem nenhuma, o motor ainda retorna resumo e rankings, só não gera
 `variacoes`/`alertas`.
 
-## 2. Saída — consumida por Miguel (interface/relatórios) e João Thiago (recomendações)
+## 4. Saída — consumida por Miguel (interface/relatórios) e João Thiago (recomendações)
 
 O motor retorna um `motor_analise.ResultadoAnalise` com:
 
@@ -82,16 +121,20 @@ calculada pelo motor — é resultado das recomendações de fornecedores do
 João Thiago. O motor expõe os dados (rankings por fornecedor, variações)
 que o módulo dele precisa para estimar essa economia. O motor gera, no
 entanto, sugestões preliminares de onde economizar (baseadas nos alertas
-de alta/crítica severidade) como parte do relatório em texto — ver seção 4.
+de alta/crítica severidade) como parte do relatório em texto — ver seção 6.
 
-## 3. Exemplo mínimo end-to-end
+## 5. Exemplo mínimo end-to-end
 
 Veja [`examples/exemplo_uso.py`](../examples/exemplo_uso.py) e os dados
 sintéticos em [`examples/dados_exemplo.csv`](../examples/dados_exemplo.csv),
 [`examples/historico_exemplo.csv`](../examples/historico_exemplo.csv) e
 [`examples/orcamento_exemplo.csv`](../examples/orcamento_exemplo.csv).
 
-## 4. Relatório em texto (`motor_analise.relatorio`)
+Atenção: esses CSVs já estão no formato **interno** da seção 3 (pós-tratamento),
+não no formato de balancete da seção 1 — eles simulam a saída que o módulo do
+Eduardo deve produzir a partir do balancete real da empresa.
+
+## 6. Relatório em texto (`motor_analise.relatorio`)
 
 Além da saída estruturada, o motor gera um relatório em texto por tópicos
 (resultado do período, resumo de gastos, onde a empresa gasta mais,
@@ -105,7 +148,8 @@ caminho = gerar_relatorio(resultado)  # salva .txt em relatorios/ e abre no Bloc
 ```
 
 Uso via linha de comando, apontando para um arquivo de lançamentos já
-tratado (`.xlsx` ou `.csv`):
+tratado (`.xlsx` ou `.csv`) — enquanto a leitura direta do balancete
+(seção 2) não está pronta:
 
 ```bash
 python analisar_documento.py caminho/lancamentos.xlsx --orcamento caminho/orcamento.csv --periodo "2026-06"

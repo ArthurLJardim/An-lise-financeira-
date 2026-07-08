@@ -18,8 +18,8 @@ renegociação com fornecedores e fornecedores alternativos.
 
 ## Como funciona
 
-1. **Upload** — usuário envia arquivo Excel, CSV ou PDF com dados financeiros.
-2. **Tratamento** — sistema padroniza contas, valores, datas, fornecedores e produtos.
+1. **Upload** — usuário envia o balancete (ou DRE) exportado do sistema contábil, em PDF ou Excel.
+2. **Tratamento** — sistema lê o balancete e padroniza contas, valores, datas e fornecedores em lançamentos de receita/despesa por categoria.
 3. **Análise** — motor calcula variações, rankings de gastos e alertas por severidade.
 4. **Recomendação** — bot sugere economia, renegociação e fornecedores alternativos.
 5. **Resultado** — interface exibe tabelas, gráficos, alertas e relatório final.
@@ -63,9 +63,12 @@ mais, alertas e onde economizar), e pode abri-lo direto no Bloco de Notas:
 python analisar_documento.py caminho/lancamentos.xlsx --orcamento caminho/orcamento.csv --periodo "2026-06"
 ```
 
-O arquivo `lancamentos` (`.xlsx` ou `.csv`) precisa já estar no formato do
-contrato de dados. Enquanto o módulo de tratamento de dados do Eduardo não
-está pronto, essa é a forma de testar a análise ponta a ponta.
+O objetivo final é apontar esse comando direto para o balancete (PDF/Excel)
+que a empresa envia. Enquanto a leitura automática do balancete (módulo de
+tratamento de dados do Eduardo) não está pronta, o arquivo `lancamentos`
+(`.xlsx` ou `.csv`) precisa já chegar no formato interno descrito em
+[`docs/CONTRATO_DADOS.md`](docs/CONTRATO_DADOS.md) — essa é a forma
+temporária de testar a análise ponta a ponta.
 
 ## Rodando localmente
 
