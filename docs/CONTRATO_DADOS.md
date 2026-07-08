@@ -9,21 +9,31 @@ implementação futura que o respeite deve integrar sem alterações no `motor_a
 
 A empresa **não** prepara uma planilha de lançamentos já categorizados. O que ela
 envia é o **balancete** (ou DRE) exportado direto do sistema contábil — em PDF ou
-Excel —, no formato tradicional de plano de contas:
+Excel.
 
-| Coluna                | Descrição                                                          |
-|------------------------|---------------------------------------------------------------------|
-| `código`               | Código da conta contábil (ex.: `1`, `164`, `1008`)                  |
-| `descrição da conta`   | Nome da conta (ex.: "FORNECEDORES", "ENERGIA ELÉTRICA", "SERVIÇOS PRESTADOS") |
-| `saldo anterior`       | Saldo da conta no início do período                                 |
-| `débito` / `crédito`   | Movimentação da conta dentro do período                             |
-| `saldo atual`          | Saldo final, com natureza `D` (devedor) ou `C` (credor)             |
+Importante: um balancete é gerado por um sistema contábil (ou escritório de
+contabilidade) diferente para cada empresa — o layout exato do PDF (colunas,
+ordem, fonte, se tem ou não um "código" de conta) varia de sistema para
+sistema e **não é padronizado**. O bot precisa funcionar independente de
+qual sistema gerou o balancete, então o contrato de entrada é definido pelo
+que é **universal em qualquer balancete** (essa identidade vale pra
+qualquer plano de contas, de qualquer contador), não pelo formato de um
+exemplo específico:
+
+| Conceito                          | Universal? | Descrição                                                          |
+|------------------------------------|:----------:|---------------------------------------------------------------------|
+| Descrição da conta                 | sim        | Nome da conta (ex.: "FORNECEDORES", "ENERGIA ELÉTRICA", "SERVIÇOS PRESTADOS") |
+| Saldo, com natureza devedora/credora | sim      | O valor da conta no período, e se é `D` (devedor) ou `C` (credor)   |
+| Saldo anterior / débito / crédito  | geralmente, mas não essencial | Detalha a movimentação; o bot usa isso só como conferência (saldo anterior + débito − crédito = saldo atual), não como dado necessário |
+| Código da conta                    | **não**    | Numeração interna definida pelo contador/sistema que gerou o balancete — não é um padrão universal, só ajuda a delimitar onde termina a descrição no texto do PDF |
 
 Um balancete mistura **contas sintéticas** (totalizadoras, ex.: `PASSIVO CIRCULANTE`)
 e **contas analíticas** (as que recebem lançamento de fato, ex.: um fornecedor
 específico ou "SERVIÇOS PRESTADOS"). Só as contas analíticas do período representam
 receita/despesa reais; as sintéticas são apenas a soma das contas abaixo delas e
-não devem ser contadas — contar as duas geraria valores duplicados.
+não devem ser contadas — contar as duas geraria valores duplicados. Essa distinção
+sintética/analítica também é universal (vale pra qualquer plano de contas), então é
+nela que o parser se apoia — ver seção 2.
 
 ## 2. Tratamento — do balancete para lançamentos internos (Eduardo, `dados/`)
 
@@ -47,10 +57,27 @@ Como funciona, resumidamente: o balancete não traz a profundidade/indentação 
 cada conta de forma confiável no PDF, então a hierarquia sintética/analítica é
 reconstruída por **reconciliação de valores** — uma conta é sintética quando uma
 sequência contígua de contas seguintes (mesma natureza D/C) soma exatamente o
-valor dela; senão, é uma conta analítica (folha) e vira um lançamento. A
-classificação em receita/despesa/categoria usa palavras-chave na conta e nos
-seus ancestrais (ex.: uma conta sob "FORNECEDORES" vira despesa; sob
-"RECEITA..." vira receita). Limitações conhecidas:
+valor dela; senão, é uma conta analítica (folha) e vira um lançamento. Essa parte
+é independente do sistema contábil que gerou o PDF (é uma identidade contábil,
+seção 1). A classificação em receita/despesa/categoria usa palavras-chave na
+conta e nos seus ancestrais (ex.: uma conta sob "FORNECEDORES" vira despesa;
+sob "RECEITA..." vira receita).
+
+A parte que **de fato varia** de sistema contábil pra sistema contábil é em que
+ordem o PDF grava as colunas dentro do texto (não necessariamente a ordem
+visual da tabela — ver o docstring de `dados/leitor_balancete.py` pra
+detalhes). Por isso o parser mantém um registro de layouts conhecidos
+(`_LAYOUTS_CONHECIDOS`) e escolhe automaticamente qual bate usando a
+reconciliação de valores como critério — mas **só existe um layout
+cadastrado até agora**, validado contra o único balancete real testado até
+o momento. Isso não é um parser universal pronto; é uma arquitetura pensada
+pra virar universal conforme mais exemplos reais (de outros contadores/
+sistemas) forem aparecendo — quando um balancete vier de um sistema
+diferente e o layout não bater, o parser falha alto (`LeitorBalanceteError`)
+em vez de arriscar números errados, e o ajuste é cadastrar um novo layout a
+partir desse exemplo real, não redesenhar em cima de um único caso.
+
+Outras limitações conhecidas:
 
 - O balancete não tem data por lançamento — todos os lançamentos gerados usam
   a data de fim do período (extraída do cabeçalho do PDF).
@@ -58,9 +85,6 @@ seus ancestrais (ex.: uma conta sob "FORNECEDORES" vira despesa; sob
   vocabulário de palavras-chave) podem cair em `categoria = "outros"` ou não
   ser reconhecidos como receita/despesa — ajustar as palavras-chave em
   `dados/leitor_balancete.py` conforme aparecerem casos novos.
-- Layout de PDF muito diferente do testado (outro sistema contábil) pode falhar
-  na extração; nesse caso o parser levanta `LeitorBalanceteError` com uma
-  mensagem explicando o problema, em vez de gerar números errados.
 
 ## 3. Contrato interno — lançamentos (entrada do `motor_analise`)
 

@@ -13,7 +13,23 @@ traz a profundidade/indentação de cada conta de forma confiável, então a
 hierarquia é reconstruída por **reconciliação de valores**: uma conta é
 sintética quando o valor de uma sequência contígua de contas seguintes
 (mesma natureza D/C) soma exatamente o valor dela; senão, é uma conta
-analítica (folha) e vira um lançamento.
+analítica (folha) e vira um lançamento. Essa reconciliação (saldo anterior
++ débito − crédito = saldo atual) é o que garante que o bot funcione com
+balancetes de contadores/sistemas diferentes: qualquer plano de contas
+respeita essa identidade contábil, então ela não depende de nenhum
+código, layout ou numeração específica de um sistema em particular.
+
+O ponto realmente específico de um sistema contábil é **em que ordem o
+PDF grava as colunas no texto** (a ordem em que o `pypdf` extrai o texto
+nem sempre é a ordem visual da tabela — ver `_LAYOUTS_CONHECIDOS`). Cada
+sistema/contador pode gerar isso de um jeito diferente; o parser tenta os
+layouts conhecidos e usa a reconciliação de valores pra confirmar qual
+bateu, mas só suporta de fato os layouts cadastrados em `_LAYOUTS_CONHECIDOS`
+— hoje, só o layout validado contra o balancete de exemplo testado. Um
+balancete de outro contador/sistema pode ter um layout diferente e falhar
+com `LeitorBalanceteError`; nesse caso, o ajuste é registrar um novo
+layout aqui a partir de um exemplo real, não redesenhar o bot em torno de
+um exemplo só.
 
 Limitação conhecida: um balancete é uma foto de saldos acumulados do
 período, sem data por lançamento — todas as linhas geradas usam a data de
@@ -38,10 +54,24 @@ import pypdf
 EPS = 0.01
 
 _NUM = r"\d{1,3}(?:\.\d{3})*,\d{2}"
-_PADRAO_LINHA_CONTA = re.compile(
-    rf"(?P<atual>{_NUM})(?P<natureza>[DC])(?P<credito>{_NUM})(?P<debito>{_NUM})"
-    rf"(?P<anterior>{_NUM})(?P<codigo>\d+)\s+(?P<descricao>.+)$"
-)
+
+# Layouts conhecidos de linha de conta, tentados nesta ordem. Cada um assume
+# uma ordem diferente para os 4 valores monetários (saldo atual, crédito,
+# débito, saldo anterior) e para o bloco código+descrição — a ordem em que o
+# PDF grava o texto varia de sistema contábil pra sistema contábil, mesmo
+# quando a tabela visual é idêntica. Só existe um layout aqui hoje (o único
+# validado até agora, contra um balancete real); pra dar suporte a um novo
+# sistema, adicione um novo padrão nesta lista a partir de um exemplo real —
+# não é preciso mudar mais nada, `_parse_linhas_texto` escolhe automaticamente
+# qual layout bate por reconciliação de valores (ver `_reconcilia`).
+_LAYOUTS_CONHECIDOS: list[re.Pattern[str]] = [
+    # "reverso": saldo atual, crédito, débito, saldo anterior, código, descrição.
+    re.compile(
+        rf"(?P<atual>{_NUM})(?P<natureza>[DC])(?P<credito>{_NUM})(?P<debito>{_NUM})"
+        rf"(?P<anterior>{_NUM})(?P<codigo>\d+)\s+(?P<descricao>.+)$"
+    ),
+]
+
 _PADRAO_PERIODO = re.compile(r"(\d{2}/\d{2}/\d{4})\s*-\s*(\d{2}/\d{2}/\d{4})")
 
 _PALAVRAS_CATEGORIA = (
@@ -94,18 +124,24 @@ def _para_float(valor_br: str) -> float:
     return float(valor_br.replace(".", "").replace(",", "."))
 
 
-def _parse_linhas_texto(texto: str) -> list[ContaBalancete]:
-    """Extrai as contas de um balancete a partir do texto bruto do PDF.
+def _reconcilia(conta: ContaBalancete) -> bool:
+    """Confere se saldo_anterior + débito - crédito bate com o saldo_atual.
 
-    Cada conta ocupa uma linha no texto extraído, no formato (colunas na
-    ordem em que o PDF desenha, não na ordem visual da tabela):
-    `<saldo atual><D|C><crédito><débito><saldo anterior><código> <descrição>`,
-    opcionalmente precedida por um rótulo de agrupamento duplicado (ignorado
-    pelo regex, que busca o bloco numérico em qualquer posição da linha).
+    É uma identidade contábil universal (vale pra qualquer plano de contas,
+    de qualquer sistema) — por isso serve tanto pra validar uma conta quanto
+    pra descobrir, entre vários layouts candidatos, qual ordem de colunas
+    este PDF em particular usa (ver `_parse_linhas_texto`).
     """
+    esperado = conta.saldo_anterior + conta.debito - conta.credito
+    if conta.natureza == "D":
+        return esperado >= -EPS and abs(esperado - conta.saldo_atual) < EPS
+    return esperado <= EPS and abs(-esperado - conta.saldo_atual) < EPS
+
+
+def _extrair_contas_com_layout(texto: str, padrao: re.Pattern[str]) -> list[ContaBalancete]:
     contas: list[ContaBalancete] = []
     for linha in texto.splitlines():
-        m = _PADRAO_LINHA_CONTA.search(linha)
+        m = padrao.search(linha)
         if not m:
             continue
         contas.append(
@@ -122,24 +158,44 @@ def _parse_linhas_texto(texto: str) -> list[ContaBalancete]:
     return contas
 
 
-def _validar_contas(contas: list[ContaBalancete]) -> None:
-    """Confere saldo_anterior + débito - crédito contra o saldo atual de cada conta.
+def _parse_linhas_texto(texto: str) -> list[ContaBalancete]:
+    """Extrai as contas de um balancete a partir do texto bruto do PDF.
 
-    Serve como verificação de sanidade de que a ordem de colunas assumida
-    pelo regex bate com este PDF; se não bater, o layout é diferente do
-    esperado e é melhor falhar alto a produzir números errados.
+    Tenta cada layout conhecido (`_LAYOUTS_CONHECIDOS`) e usa a reconciliação
+    de valores pra escolher: o layout certo é aquele em que TODAS as contas
+    reconciliam (saldo anterior + débito - crédito = saldo atual). Se nenhum
+    layout reconciliar 100%, devolve o resultado do melhor candidato parcial
+    (o que reconciliou mais contas) — `_validar_contas`, chamada depois,
+    é quem efetivamente rejeita esse caso com uma mensagem clara.
+    """
+    melhor: list[ContaBalancete] = []
+    melhor_reconciliadas = -1
+    for padrao in _LAYOUTS_CONHECIDOS:
+        contas = _extrair_contas_com_layout(texto, padrao)
+        if not contas:
+            continue
+        reconciliadas = sum(1 for c in contas if _reconcilia(c))
+        if reconciliadas == len(contas):
+            return contas
+        if reconciliadas > melhor_reconciliadas:
+            melhor, melhor_reconciliadas = contas, reconciliadas
+    return melhor
+
+
+def _validar_contas(contas: list[ContaBalancete]) -> None:
+    """Confere cada conta contra `_reconcilia`.
+
+    Se `_parse_linhas_texto` não achou nenhum layout que bata 100%, é aqui
+    que isso vira um erro claro em vez de números errados passarem adiante.
     """
     for conta in contas:
-        esperado = conta.saldo_anterior + conta.debito - conta.credito
-        if conta.natureza == "D":
-            ok = esperado >= -EPS and abs(esperado - conta.saldo_atual) < EPS
-        else:
-            ok = esperado <= EPS and abs(-esperado - conta.saldo_atual) < EPS
-        if not ok:
+        if not _reconcilia(conta):
             raise LeitorBalanceteError(
                 f"Conta '{conta.codigo} {conta.descricao}' não reconcilia "
                 "(saldo anterior + débito - crédito não bate com o saldo atual). "
-                "O layout de colunas deste balancete pode ser diferente do esperado."
+                "O layout deste balancete não é nenhum dos suportados hoje "
+                "(_LAYOUTS_CONHECIDOS em dados/leitor_balancete.py) — provavelmente "
+                "vem de um sistema contábil diferente do testado."
             )
 
 

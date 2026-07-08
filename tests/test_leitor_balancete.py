@@ -1,5 +1,8 @@
+import re
+
 import pytest
 
+import dados.leitor_balancete as leitor_balancete
 from dados.leitor_balancete import LeitorBalanceteError, processar_texto_balancete
 
 
@@ -115,3 +118,39 @@ class TestProcessarTextoBalancete:
     def test_dataframe_tem_colunas_do_contrato_de_lancamentos(self):
         df = processar_texto_balancete(_TEXTO_BALANCETE)
         assert list(df.columns) == ["data", "tipo", "categoria", "fornecedor", "valor", "descricao"]
+
+
+class TestSelecaoDeLayout:
+    """O parser não pode depender de um único layout de PDF (sistemas contábeis
+    diferentes gravam as colunas em ordens diferentes no texto) — ele tenta os
+    layouts cadastrados e usa a reconciliação de valores pra escolher qual bate.
+    """
+
+    def test_ignora_layout_que_nao_reconcilia_e_usa_o_que_reconcilia(self, monkeypatch):
+        padrao_certo = leitor_balancete._LAYOUTS_CONHECIDOS[0]
+        # Mesmo formato de linha, mas trocando os grupos "debito" e "credito" de
+        # posicao: nunca vai reconciliar pra uma conta com movimentacao real,
+        # simulando um layout de outro sistema contabil que nao e' o certo.
+        padrao_errado = re.compile(
+            rf"(?P<atual>{leitor_balancete._NUM})(?P<natureza>[DC])"
+            rf"(?P<debito>{leitor_balancete._NUM})(?P<credito>{leitor_balancete._NUM})"
+            rf"(?P<anterior>{leitor_balancete._NUM})(?P<codigo>\d+)\s+(?P<descricao>.+)$"
+        )
+        monkeypatch.setattr(
+            leitor_balancete, "_LAYOUTS_CONHECIDOS", [padrao_errado, padrao_certo]
+        )
+
+        df = processar_texto_balancete(_TEXTO_BALANCETE)
+
+        assert set(df["fornecedor"]) == {
+            "FORNECEDOR TESTE UM LTDA",
+            "FORNECEDOR TESTE DOIS EIRELI",
+            "RECEITA DE PRESTACAO DE SERVICOS",
+        }
+
+    def test_nenhum_layout_cadastrado_bate_levanta_erro(self, monkeypatch):
+        padrao_impossivel = re.compile(r"nao vai casar com nada aqui")
+        monkeypatch.setattr(leitor_balancete, "_LAYOUTS_CONHECIDOS", [padrao_impossivel])
+
+        with pytest.raises(LeitorBalanceteError):
+            processar_texto_balancete(_TEXTO_BALANCETE)
