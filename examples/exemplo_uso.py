@@ -21,6 +21,7 @@ sys.path.insert(0, str(PASTA_EXEMPLOS.parent))  # permite rodar via `python exam
 import pandas as pd
 
 from motor_analise import AnaliseFinanceira
+from motor_analise.relatorio import montar_relatorio_texto, salvar_relatorio_txt
 
 
 def main() -> None:
@@ -33,7 +34,10 @@ def main() -> None:
         lancamentos, orcamento=orcamento, historico=historico, periodo="2026-06"
     )
 
-    print("=== RESUMO ===")
+    print("=== RESULTADO CONTÁBIL (lucro/prejuízo) ===")
+    print(json.dumps(resultado.resultado_contabil, indent=2, ensure_ascii=False))
+
+    print("\n=== RESUMO ===")
     print(json.dumps(resultado.resumo, indent=2, ensure_ascii=False))
 
     print("\n=== RANKING POR CATEGORIA ===")
@@ -48,6 +52,12 @@ def main() -> None:
 
     print("\n=== JSON completo (formato para interface/recomendações) ===")
     print(json.dumps(resultado.to_dict(), indent=2, ensure_ascii=False)[:800], "...")
+
+    print("\n=== RELATÓRIO EM TÓPICOS (prévia) ===")
+    print(montar_relatorio_texto(resultado))
+
+    caminho_relatorio = salvar_relatorio_txt(resultado, pasta_destino=PASTA_EXEMPLOS.parent / "relatorios")
+    print(f"Relatório salvo em: {caminho_relatorio}")
 
 
 if __name__ == "__main__":

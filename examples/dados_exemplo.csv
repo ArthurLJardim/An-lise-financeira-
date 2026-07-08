@@ -1,13 +1,15 @@
-data,categoria,fornecedor,produto,valor,forma_pagamento
-2026-06-02,mercadorias,Distribuidora Center,Arroz 5kg,12500.00,boleto
-2026-06-03,mercadorias,Distribuidora Center,Feijao 1kg,9800.00,boleto
-2026-06-05,mercadorias,Atacadao Sul,Oleo de soja,15200.00,pix
-2026-06-10,mercadorias,Fornecedor Silva,Acucar 1kg,7400.00,boleto
-2026-06-18,mercadorias,Atacadao Sul,Farinha de trigo,7100.00,pix
-2026-06-04,energia,Companhia Eletrica Regional,,3200.00,boleto
-2026-06-01,aluguel,Imobiliaria Central,,8000.00,transferencia
-2026-06-05,folha,Folha de Pagamento,,25000.00,transferencia
-2026-06-07,transporte,Transportadora Rapida,,2800.00,boleto
-2026-06-20,transporte,Posto Combustivel Norte,,2000.00,pix
-2026-06-08,servicos,Contabilidade Prime,,3200.00,boleto
-2026-06-15,servicos,Manutencao Predial Ltda,,4300.00,pix
+data,tipo,categoria,fornecedor,produto,valor,forma_pagamento
+2026-06-10,receita,vendas,Vendas Balcao,,72000.00,pix
+2026-06-25,receita,vendas,Vendas Atacado,,58000.00,boleto
+2026-06-02,despesa,mercadorias,Distribuidora Center,Arroz 5kg,12500.00,boleto
+2026-06-03,despesa,mercadorias,Distribuidora Center,Feijao 1kg,9800.00,boleto
+2026-06-05,despesa,mercadorias,Atacadao Sul,Oleo de soja,15200.00,pix
+2026-06-10,despesa,mercadorias,Fornecedor Silva,Acucar 1kg,7400.00,boleto
+2026-06-18,despesa,mercadorias,Atacadao Sul,Farinha de trigo,7100.00,pix
+2026-06-04,despesa,energia,Companhia Eletrica Regional,,3200.00,boleto
+2026-06-01,despesa,aluguel,Imobiliaria Central,,8000.00,transferencia
+2026-06-05,despesa,folha,Folha de Pagamento,,25000.00,transferencia
+2026-06-07,despesa,transporte,Transportadora Rapida,,2800.00,boleto
+2026-06-20,despesa,transporte,Posto Combustivel Norte,,2000.00,pix
+2026-06-08,despesa,servicos,Contabilidade Prime,,3200.00,boleto
+2026-06-15,despesa,servicos,Manutencao Predial Ltda,,4300.00,pix

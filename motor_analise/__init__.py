@@ -13,6 +13,7 @@ Veja docs/CONTRATO_DADOS.md para o formato esperado de entrada e saída.
 
 from .engine import AnaliseFinanceira, ConfiguracaoAnalise
 from .modelos import Alerta, ContratoDadosError, ResultadoAnalise, padronizar_categoria
+from .relatorio import abrir_no_bloco_de_notas, gerar_relatorio, montar_relatorio_texto, salvar_relatorio_txt
 
 __all__ = [
     "AnaliseFinanceira",
@@ -21,4 +22,8 @@ __all__ = [
     "ResultadoAnalise",
     "ContratoDadosError",
     "padronizar_categoria",
+    "montar_relatorio_texto",
+    "salvar_relatorio_txt",
+    "abrir_no_bloco_de_notas",
+    "gerar_relatorio",
 ]

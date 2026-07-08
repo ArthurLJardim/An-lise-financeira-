@@ -10,18 +10,19 @@ from .modelos import Alerta
 
 
 def calcular_resumo(
-    df_atual: pd.DataFrame,
+    df_despesas: pd.DataFrame,
     variacoes: pd.DataFrame,
     alertas: list[Alerta],
     periodo: str,
 ) -> dict[str, Any]:
     """Monta o dicionário usado pelos cards de resumo da interface (Miguel).
 
-    Não inclui "economia estimada": esse valor é calculado pelo módulo de
-    recomendações de fornecedores (João Thiago) a partir dos dados que este
-    motor expõe (rankings e variações).
+    `df_despesas` deve conter apenas lançamentos de despesa (receitas não
+    entram nos cards de gasto). Não inclui "economia estimada": esse valor
+    é calculado pelo módulo de recomendações de fornecedores (João Thiago)
+    a partir dos dados que este motor expõe (rankings e variações).
     """
-    gasto_total = float(df_atual["valor"].sum())
+    gasto_total = float(df_despesas["valor"].sum())
 
     maior_aumento = None
     if not variacoes.empty:
@@ -42,7 +43,7 @@ def calcular_resumo(
     return {
         "periodo": periodo,
         "gasto_total": round(gasto_total, 2),
-        "quantidade_lancamentos": int(len(df_atual)),
+        "quantidade_lancamentos": int(len(df_despesas)),
         "maior_aumento": maior_aumento,
         "numero_alertas": len(alertas),
         "alertas_por_severidade": contagem_severidade,

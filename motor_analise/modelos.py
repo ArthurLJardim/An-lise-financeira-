@@ -28,6 +28,7 @@ CATEGORIAS_PADRAO = (
 )
 
 SEVERIDADES = ("baixa", "media", "alta", "critica")
+TIPOS_LANCAMENTO = ("receita", "despesa")
 
 
 def padronizar_categoria(valor: str) -> str:
@@ -90,6 +91,18 @@ def validar_lancamentos(df: pd.DataFrame) -> pd.DataFrame:
     if "produto" in df.columns:
         df["produto"] = df["produto"].fillna("nao informado").astype(str).str.strip()
 
+    if "tipo" in df.columns:
+        df["tipo"] = df["tipo"].fillna("despesa").astype(str).str.strip().str.lower()
+        invalidos = ~df["tipo"].isin(TIPOS_LANCAMENTO)
+        if invalidos.any():
+            valores = sorted(df.loc[invalidos, "tipo"].unique())
+            raise ContratoDadosError(
+                f"Coluna 'tipo' contém valor(es) inválido(s) {valores}; "
+                f"esperado um de {TIPOS_LANCAMENTO}."
+            )
+    else:
+        df["tipo"] = "despesa"
+
     return df
 
 
@@ -146,6 +159,7 @@ class ResultadoAnalise:
 
     periodo: str
     resumo: dict[str, Any]
+    resultado_contabil: dict[str, Any]
     variacoes: pd.DataFrame
     rankings: dict[str, pd.DataFrame]
     alertas: list[Alerta] = field(default_factory=list)
@@ -159,6 +173,7 @@ class ResultadoAnalise:
         return {
             "periodo": self.periodo,
             "resumo": self.resumo,
+            "resultado_contabil": self.resultado_contabil,
             "variacoes": self.variacoes.to_dict(orient="records"),
             "rankings": {
                 nome: df.to_dict(orient="records") for nome, df in self.rankings.items()

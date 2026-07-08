@@ -3,6 +3,7 @@ import pytest
 
 from motor_analise import AnaliseFinanceira, ConfiguracaoAnalise, ContratoDadosError
 from motor_analise.modelos import padronizar_categoria, validar_lancamentos, validar_orcamento
+from motor_analise.relatorio import montar_relatorio_texto, salvar_relatorio_txt
 
 
 def _lancamentos(linhas):
@@ -153,3 +154,91 @@ class TestAnaliseFinanceira:
         alerta = next(a for a in resultado.alertas if a.categoria == "transporte")
         assert alerta.tipo == "variacao_historica"
         assert alerta.variacao_percentual == pytest.approx(50.0)
+
+
+def _lancamentos_com_tipo(linhas):
+    return pd.DataFrame(
+        linhas, columns=["data", "tipo", "categoria", "fornecedor", "valor"]
+    )
+
+
+@pytest.fixture
+def lancamentos_com_receita_e_despesa():
+    return _lancamentos_com_tipo(
+        [
+            ("2026-06-01", "receita", "vendas", "Cliente Balcao", 20000.0),
+            ("2026-06-02", "despesa", "mercadorias", "Fornecedor A", 12000.0),
+            ("2026-06-03", "despesa", "energia", "Cia Eletrica", 1000.0),
+        ]
+    )
+
+
+class TestResultadoContabil:
+    def test_tipo_invalido_leva_a_erro(self):
+        df = _lancamentos_com_tipo(
+            [("2026-06-01", "investimento", "mercadorias", "Fornecedor A", 100.0)]
+        )
+        with pytest.raises(ContratoDadosError, match="tipo"):
+            validar_lancamentos(df)
+
+    def test_lancamentos_sem_coluna_tipo_sao_tratados_como_despesa(self, lancamentos_atual):
+        resultado = validar_lancamentos(lancamentos_atual)
+        assert (resultado["tipo"] == "despesa").all()
+
+    def test_apura_lucro_quando_receita_maior_que_despesa(self, lancamentos_com_receita_e_despesa):
+        engine = AnaliseFinanceira()
+        resultado = engine.analisar(lancamentos_com_receita_e_despesa, periodo="2026-06")
+
+        rc = resultado.resultado_contabil
+        assert rc["receita_total"] == pytest.approx(20000.0)
+        assert rc["despesa_total"] == pytest.approx(13000.0)
+        assert rc["resultado"] == pytest.approx(7000.0)
+        assert rc["situacao"] == "lucro"
+        assert rc["margem_percentual"] == pytest.approx(35.0)
+
+    def test_apura_prejuizo_quando_despesa_maior_que_receita(self):
+        df = _lancamentos_com_tipo(
+            [
+                ("2026-06-01", "receita", "vendas", "Cliente Balcao", 5000.0),
+                ("2026-06-02", "despesa", "mercadorias", "Fornecedor A", 9000.0),
+            ]
+        )
+        engine = AnaliseFinanceira()
+        resultado = engine.analisar(df, periodo="2026-06")
+        assert resultado.resultado_contabil["situacao"] == "prejuizo"
+        assert resultado.resultado_contabil["resultado"] == pytest.approx(-4000.0)
+
+    def test_receita_nao_entra_nos_rankings_e_resumo_de_gasto(self, lancamentos_com_receita_e_despesa):
+        engine = AnaliseFinanceira()
+        resultado = engine.analisar(lancamentos_com_receita_e_despesa, periodo="2026-06")
+
+        assert "vendas" not in set(resultado.rankings["por_categoria"]["categoria"])
+        assert resultado.resumo["gasto_total"] == pytest.approx(13000.0)
+
+
+class TestRelatorioTexto:
+    def test_relatorio_contem_topicos_principais(self, lancamentos_com_receita_e_despesa, orcamento):
+        engine = AnaliseFinanceira()
+        resultado = engine.analisar(
+            lancamentos_com_receita_e_despesa, orcamento=orcamento, periodo="2026-06"
+        )
+        texto = montar_relatorio_texto(resultado)
+
+        assert "RESULTADO DO PERÍODO" in texto
+        assert "RESUMO DE GASTOS" in texto
+        assert "ONDE A EMPRESA GASTA MAIS" in texto
+        assert "ALERTAS DE GASTOS" in texto
+        assert "ONDE A EMPRESA PODE ECONOMIZAR" in texto
+        assert "LUCRO" in texto
+
+    def test_salvar_relatorio_grava_arquivo_utf8(self, lancamentos_com_receita_e_despesa, tmp_path):
+        engine = AnaliseFinanceira()
+        resultado = engine.analisar(lancamentos_com_receita_e_despesa, periodo="2026-06")
+
+        destino = tmp_path / "relatorio.txt"
+        caminho = salvar_relatorio_txt(resultado, caminho=destino)
+
+        assert caminho == destino
+        assert caminho.exists()
+        conteudo = caminho.read_text(encoding="utf-8")
+        assert "RELATÓRIO DE ANÁLISE FINANCEIRA" in conteudo
