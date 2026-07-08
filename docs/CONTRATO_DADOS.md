@@ -37,10 +37,30 @@ não devem ser contadas — contar as duas geraria valores duplicados.
 4. Gerar o `pandas.DataFrame` de **lançamentos** descrito na seção 3 — esse sim é o
    contrato interno consumido pelo motor.
 
-Enquanto esse tratamento automático não existe, [`analisar_documento.py`](../analisar_documento.py)
-só aceita o arquivo já convertido para o formato da seção 3 (`.xlsx`/`.csv`) — é uma
-limitação temporária do CLI, não o contrato definitivo do bot. O objetivo final é o
-usuário apontar o script direto para o PDF/Excel do balancete.
+Existe uma primeira versão disso pronta e funcionando em
+[`dados/leitor_balancete.py`](../dados/leitor_balancete.py) — `ler_balancete_pdf(caminho)`
+lê um balancete em PDF e devolve direto o DataFrame de lançamentos, sem nenhuma
+conversão manual. [`analisar_documento.py`](../analisar_documento.py) já usa isso
+automaticamente quando o arquivo passado é um `.pdf`.
+
+Como funciona, resumidamente: o balancete não traz a profundidade/indentação de
+cada conta de forma confiável no PDF, então a hierarquia sintética/analítica é
+reconstruída por **reconciliação de valores** — uma conta é sintética quando uma
+sequência contígua de contas seguintes (mesma natureza D/C) soma exatamente o
+valor dela; senão, é uma conta analítica (folha) e vira um lançamento. A
+classificação em receita/despesa/categoria usa palavras-chave na conta e nos
+seus ancestrais (ex.: uma conta sob "FORNECEDORES" vira despesa; sob
+"RECEITA..." vira receita). Limitações conhecidas:
+
+- O balancete não tem data por lançamento — todos os lançamentos gerados usam
+  a data de fim do período (extraída do cabeçalho do PDF).
+- Planos de contas muito diferentes do usual (nomes de conta fora do
+  vocabulário de palavras-chave) podem cair em `categoria = "outros"` ou não
+  ser reconhecidos como receita/despesa — ajustar as palavras-chave em
+  `dados/leitor_balancete.py` conforme aparecerem casos novos.
+- Layout de PDF muito diferente do testado (outro sistema contábil) pode falhar
+  na extração; nesse caso o parser levanta `LeitorBalanceteError` com uma
+  mensagem explicando o problema, em vez de gerar números errados.
 
 ## 3. Contrato interno — lançamentos (entrada do `motor_analise`)
 
@@ -147,10 +167,11 @@ from motor_analise.relatorio import gerar_relatorio
 caminho = gerar_relatorio(resultado)  # salva .txt em relatorios/ e abre no Bloco de Notas
 ```
 
-Uso via linha de comando, apontando para um arquivo de lançamentos já
-tratado (`.xlsx` ou `.csv`) — enquanto a leitura direta do balancete
-(seção 2) não está pronta:
+Uso via linha de comando, apontando direto para o balancete em PDF:
 
 ```bash
-python analisar_documento.py caminho/lancamentos.xlsx --orcamento caminho/orcamento.csv --periodo "2026-06"
+python analisar_documento.py caminho/balancete.pdf --orcamento caminho/orcamento.csv --periodo "2026-06"
 ```
+
+Também funciona com um arquivo já tratado (`.xlsx`/`.csv`, seção 3), útil para
+dados sintéticos de teste.

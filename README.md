@@ -60,15 +60,14 @@ tópicos (resultado do período, resumo de gastos, onde a empresa gasta
 mais, alertas e onde economizar), e pode abri-lo direto no Bloco de Notas:
 
 ```bash
-python analisar_documento.py caminho/lancamentos.xlsx --orcamento caminho/orcamento.csv --periodo "2026-06"
+python analisar_documento.py caminho/balancete.pdf --orcamento caminho/orcamento.csv --periodo "2026-06"
 ```
 
-O objetivo final é apontar esse comando direto para o balancete (PDF/Excel)
-que a empresa envia. Enquanto a leitura automática do balancete (módulo de
-tratamento de dados do Eduardo) não está pronta, o arquivo `lancamentos`
-(`.xlsx` ou `.csv`) precisa já chegar no formato interno descrito em
-[`docs/CONTRATO_DADOS.md`](docs/CONTRATO_DADOS.md) — essa é a forma
-temporária de testar a análise ponta a ponta.
+O comando já lê o balancete em **PDF** direto ([`dados/leitor_balancete.py`](dados/leitor_balancete.py))
+e converte pra lançamentos automaticamente — não é preciso preparar planilha
+nenhuma. Também aceita um arquivo já tratado (`.xlsx`/`.csv`) no formato
+interno descrito em [`docs/CONTRATO_DADOS.md`](docs/CONTRATO_DADOS.md), útil
+para dados sintéticos de teste.
 
 ## Rodando localmente
 
@@ -90,7 +89,7 @@ pytest
 ```
 docs/                contrato de dados entre os módulos
 motor_analise/        motor de análise financeira (Arthur)
-dados/                 entrada e tratamento dos dados (Eduardo)
+dados/                 entrada e tratamento dos dados (Eduardo) — já lê balancete em PDF
 fornecedores/           análise de fornecedores e recomendações (João Thiago)
 interface/              interface, relatórios e apresentação (Miguel)
 examples/              dados sintéticos e script de uso end-to-end
