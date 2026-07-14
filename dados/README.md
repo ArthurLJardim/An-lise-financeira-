@@ -29,14 +29,34 @@ detalhes do algoritmo. Testes em
 
 **Importante:** isso ainda não é um parser universal — a ordem em que o PDF
 grava as colunas no texto varia de sistema contábil pra sistema contábil, e
-só existem **dois layouts cadastrados** até agora (`_LAYOUTS_CONHECIDOS` em
-`leitor_balancete.py`): o "reverso", validado contra um balancete real, e o
-"natural" (ordem visual da tabela), testado só contra PDF sintético gerado
-localmente — nenhum dos dois passou por um segundo balancete real ainda.
-Um balancete de outro contador/sistema pode ter layout diferente dos dois e
-falhar com `LeitorBalanceteError` — nesse caso, o ajuste é cadastrar um novo
-layout a partir de um exemplo real (passo a passo no docstring do módulo),
-não assumir que os layouts testados até agora são a regra geral.
+só existem **três layouts cadastrados** até agora (`_LAYOUTS_CONHECIDOS` em
+`leitor_balancete.py`): o "reverso" e o "classificado" (com coluna de
+classificação hierárquica — código com pontos, ex.: `3.1.5.01.00002`, usada
+pra reconstruir a hierarquia sintética/analítica de forma mais robusta que
+reconciliação de valores), ambos validados contra três balancetes reais de
+dois contadores/sistemas diferentes; e o "natural" (ordem visual da
+tabela), testado só contra PDF sintético gerado localmente — ainda sem
+confirmação num balancete real. Um balancete de outro contador/sistema pode
+ter layout diferente dos três e falhar com `LeitorBalanceteError` — nesse
+caso, o ajuste é cadastrar um novo layout a partir de um exemplo real
+(passo a passo no docstring do módulo), não assumir que os layouts testados
+até agora são a regra geral.
+
+Validação contra dois balancetes reais de uma indústria (com estrutura de
+DRE completa — CPV, custos diretos/indiretos, resultado financeiro) achou e
+corrigiu três bugs de classificação que só apareciam nesse tipo de
+documento (balancete comercial simples não tem essas contas): confusão
+entre "resultado bruto" (ancestral tanto de receita quanto de custo/despesa
+num DRE real) e receita de fato; contas de dedução de receita como `"(-)
+ICMS"` sendo puladas; e o mais grave — `"(-) ESTOQUE INICIAL"` (uma conta
+de rateio de CPV, não uma despesa isolada) sendo somado pelo valor cheio do
+estoque total da empresa (R$ 91,68 milhões num dos balancetes), inflando a
+despesa e transformando um lucro real de ~R$ 790 mil num "prejuízo"
+fictício de ~R$ 92 milhões. Ver `_PALAVRAS_ROLLOVER_ESTOQUE` em
+`leitor_balancete.py` e a seção "Outras limitações conhecidas" de
+`docs/CONTRATO_DADOS.md` pro detalhe e pra limitação residual que ainda
+fica (créditos de rateio mais específicos, tipo IPI/ICMS recuperável sobre
+compras, podem gerar uma distorção pequena remanescente).
 
 Também vale a checagem de identidade contábil (`_validar_identidade_contabil`):
 se a soma das contas devedoras não bater com a soma das credoras depois da

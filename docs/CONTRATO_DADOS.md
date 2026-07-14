@@ -68,17 +68,26 @@ ordem o PDF grava as colunas dentro do texto (não necessariamente a ordem
 visual da tabela — ver o docstring de `dados/leitor_balancete.py` pra
 detalhes). Por isso o parser mantém um registro de layouts conhecidos
 (`_LAYOUTS_CONHECIDOS`) e escolhe automaticamente qual bate usando a
-reconciliação de valores como critério — mas **só existem dois layouts
-cadastrados até agora**: o "reverso" (validado contra o único balancete
-real testado até o momento) e o "natural" (a ordem visual da própria
-tabela, testado só contra PDF sintético — ainda sem confirmação num
-balancete real). Isso não é um parser universal pronto; é uma arquitetura
-pensada pra virar universal conforme mais exemplos reais (de outros
-contadores/sistemas) forem aparecendo — quando um balancete vier de um
-sistema diferente e nenhum layout bater, o parser falha alto
+reconciliação de valores como critério — **três layouts cadastrados até
+agora**: o "reverso" e o "classificado" (ambos validados contra três
+balancetes reais, de dois contadores/sistemas diferentes), e o "natural"
+(a ordem visual da própria tabela, testado só contra PDF sintético — ainda
+sem confirmação num balancete real). Isso não é um parser universal pronto;
+é uma arquitetura pensada pra virar universal conforme mais exemplos reais
+(de outros contadores/sistemas) forem aparecendo — quando um balancete vier
+de um sistema diferente e nenhum layout bater, o parser falha alto
 (`LeitorBalanceteError`) em vez de arriscar números errados, e o ajuste é
 cadastrar um novo layout a partir desse exemplo real (passo a passo no
 docstring do módulo), não redesenhar em cima dos poucos casos conhecidos.
+
+O layout "classificado" traz uma coluna de classificação hierárquica
+(código com pontos, ex.: `3.1.5.01.00002`) — quando presente, a hierarquia
+sintética/analítica é reconstruída a partir desse código (uma conta é
+folha quando nenhuma outra classificação começa com o prefixo dela + ".")
+em vez de reconciliação de valores. É mais robusto (não depende da ordem
+em que o balancete lista as contas), mas só se aplica quando o balancete
+traz essa coluna — nos outros layouts, continua valendo a reconciliação
+por valor.
 
 Além da reconciliação por conta, há uma segunda camada de segurança:
 `_validar_identidade_contabil` confere se o total das contas devedoras
@@ -102,6 +111,20 @@ Outras limitações conhecidas:
   OCR (Tesseract via `pytesseract`/`pypdfium2`) — precisa do motor Tesseract
   instalado no sistema; sem ele, erro claro em vez de travar. Ver
   `dados/README.md`.
+- Contas de rateio dentro de custo/despesa que têm duas pontas de naturezas
+  opostas (ex.: `"(-) ESTOQUE INICIAL"`/`"(+) ESTOQUE FINAL"` dentro de
+  CUSTOS DOS PRODUTOS VENDIDOS, onde CPV = estoque inicial + compras −
+  estoque final) não têm como ser somadas corretamente sem suporte a valor
+  com sinal no contrato de lançamentos (seção 3 exige `valor` sempre
+  positivo). O parser exclui as duas pontas de estoque inicial/final em vez
+  de somar só uma como se fosse o custo inteiro do período (o que já
+  causou, num balancete real, uma despesa de estoque contado sozinho — R$
+  91,68 milhões — virar um "prejuízo" fictício de R$ 92 milhões numa
+  empresa que teve lucro de verdade). Outras contas de rateio/crédito
+  recuperável mais específicas do plano de contas (ex.: IPI/ICMS
+  recuperável sobre compras) ainda podem gerar uma pequena distorção
+  residual — o parser não tenta identificar e nettar todo padrão de rateio
+  possível, só o de estoque inicial/final por ser um item padrão de DRE.
 
 ## 3. Contrato interno — lançamentos (entrada do `motor_analise`)
 

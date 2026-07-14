@@ -25,11 +25,14 @@ nem sempre é a ordem visual da tabela — ver `_LAYOUTS_CONHECIDOS`). Cada
 sistema/contador pode gerar isso de um jeito diferente; o parser tenta os
 layouts conhecidos e usa a reconciliação de valores pra confirmar qual
 bateu, mas só suporta de fato os layouts cadastrados em `_LAYOUTS_CONHECIDOS`
-— hoje, dois: o "reverso" (validado contra um balancete real) e o
-"natural" (a ordem visual da própria tabela, sem inversão — testado só
-contra PDF sintético, ainda não contra um balancete real desse tipo). Um
-balancete de outro contador/sistema pode ter um layout diferente dos dois
-e falhar com `LeitorBalanceteError`.
+— hoje, três: o "reverso" e o "classificado" (validados contra três
+balancetes reais, de dois contadores/sistemas diferentes — o "classificado"
+tem uma coluna de classificação hierárquica que permite reconstruir a
+hierarquia sem depender de reconciliação de valores, ver
+`_identificar_folhas_por_classificacao`), e o "natural" (a ordem visual da
+própria tabela, sem inversão — testado só contra PDF sintético, ainda não
+contra um balancete real desse tipo). Um balancete de outro contador/sistema
+pode ter um layout diferente dos três e falhar com `LeitorBalanceteError`.
 
 Como adicionar suporte a um novo layout, a partir de um balancete real que
 falhou:
@@ -102,6 +105,18 @@ _LAYOUTS_CONHECIDOS: list[re.Pattern[str]] = [
     re.compile(
         rf"(?P<codigo>\d+)\s+(?P<descricao>\D+?)\s+(?P<anterior>{_NUM})\s+"
         rf"(?P<debito>{_NUM})\s+(?P<credito>{_NUM})\s+(?P<atual>{_NUM})(?P<natureza>[DC])\s*$"
+    ),
+    # "classificado": código, classificação (código hierárquico com pontos,
+    # ex.: "1.1.3.08.00001"), saldo atual+natureza, saldo anterior (às vezes
+    # também com natureza — ex.: "36.777.176,96D34.914.972,47D"), débito,
+    # crédito, descrição. Validado contra dois balancetes reais (empresas e
+    # sistema diferentes do primeiro layout). Quando a classificação está
+    # presente, `_identificar_folhas` usa ela pra achar as contas-folha (mais
+    # robusto que reconciliação de valores — não depende da ordem das contas
+    # no PDF) em vez do algoritmo de reconciliação.
+    re.compile(
+        rf"(?P<codigo>\d+)\s+(?P<classificacao>[\d.]+)\s+(?P<atual>{_NUM})(?P<natureza>[DC])"
+        rf"(?P<anterior>{_NUM})(?P<natureza_anterior>[DC])?\s+(?P<debito>{_NUM})\s+(?P<credito>{_NUM})(?P<descricao>.+)$"
     ),
 ]
 
@@ -250,7 +265,17 @@ class ContaBalancete:
     debito: float
     credito: float
     saldo_atual: float
-    natureza: str  # "D" (devedor) ou "C" (credor)
+    natureza: str  # "D" (devedor) ou "C" (credor), do saldo atual
+    # Código hierárquico com pontos (ex.: "1.1.3.08.00001"), quando o layout
+    # tem essa coluna. None nos layouts sem ela — nesse caso a hierarquia é
+    # reconstruída por reconciliação de valores (ver `_identificar_folhas`).
+    classificacao: Optional[str] = None
+    # Natureza do saldo anterior, quando o layout mostra essa marca também
+    # (ex.: "18.120,00C" de saldo anterior, sem nenhuma movimentação no
+    # período). None quando o layout não marca a natureza do saldo anterior
+    # (nesse caso ele é tratado como já expresso na mesma convenção de sinal
+    # da natureza do saldo atual — é o que os outros layouts sempre fizeram).
+    natureza_anterior: Optional[str] = None
 
 
 def _normalizar(texto: str) -> str:
@@ -269,8 +294,18 @@ def _reconcilia(conta: ContaBalancete) -> bool:
     de qualquer sistema) — por isso serve tanto pra validar uma conta quanto
     pra descobrir, entre vários layouts candidatos, qual ordem de colunas
     este PDF em particular usa (ver `_parse_linhas_texto`).
+
+    Quando o layout marca a natureza do próprio saldo anterior (ex.: uma
+    conta que era credora e virou devedora durante o período, ou uma sem
+    nenhuma movimentação — só saldo anterior repetido, credor), o saldo
+    anterior entra com sinal invertido se a natureza dele for credora —
+    independente da natureza do saldo atual, que pode ser igual ou
+    diferente. Sem essa marca (layouts que não mostram natureza no saldo
+    anterior), assume-se que ele já está na mesma convenção de sinal do
+    saldo atual — sempre foi assim que os outros layouts funcionaram.
     """
-    esperado = conta.saldo_anterior + conta.debito - conta.credito
+    anterior = -conta.saldo_anterior if conta.natureza_anterior == "C" else conta.saldo_anterior
+    esperado = anterior + conta.debito - conta.credito
     if conta.natureza == "D":
         return esperado >= -EPS and abs(esperado - conta.saldo_atual) < EPS
     return esperado <= EPS and abs(-esperado - conta.saldo_atual) < EPS
@@ -282,15 +317,18 @@ def _extrair_contas_com_layout(texto: str, padrao: re.Pattern[str]) -> list[Cont
         m = padrao.search(linha)
         if not m:
             continue
+        grupos = m.groupdict()
         contas.append(
             ContaBalancete(
-                codigo=m.group("codigo"),
-                descricao=m.group("descricao").strip(),
-                saldo_anterior=_para_float(m.group("anterior")),
-                debito=_para_float(m.group("debito")),
-                credito=_para_float(m.group("credito")),
-                saldo_atual=_para_float(m.group("atual")),
-                natureza=m.group("natureza"),
+                codigo=grupos["codigo"],
+                descricao=grupos["descricao"].strip(),
+                saldo_anterior=_para_float(grupos["anterior"]),
+                debito=_para_float(grupos["debito"]),
+                credito=_para_float(grupos["credito"]),
+                saldo_atual=_para_float(grupos["atual"]),
+                natureza=grupos["natureza"],
+                classificacao=grupos.get("classificacao"),
+                natureza_anterior=grupos.get("natureza_anterior"),
             )
         )
     return contas
@@ -375,10 +413,19 @@ def _consumir_grupo(
     return None, indice
 
 
-def _identificar_folhas(contas: list[ContaBalancete]) -> list[tuple[ContaBalancete, list[str]]]:
+def _identificar_folhas_por_reconciliacao(
+    contas: list[ContaBalancete],
+) -> list[tuple[ContaBalancete, list[str]]]:
     """Percorre todas as contas (podem existir várias árvores-raiz independentes,
     ex.: ATIVO e PASSIVO) e devolve só as contas analíticas (folhas), cada uma
-    com a cadeia de descrições dos seus ancestrais (raiz primeiro)."""
+    com a cadeia de descrições dos seus ancestrais (raiz primeiro).
+
+    Assume que o balancete lista as contas em pré-ordem estrita (pai
+    imediatamente seguido de todos os filhos, contíguos) — é o método usado
+    quando o layout não tem coluna de classificação hierárquica (ver
+    `_identificar_folhas_por_classificacao`, mais robusto, usado quando ela
+    está disponível).
+    """
     folhas: list[tuple[ContaBalancete, list[str]]] = []
     i = 0
     n = len(contas)
@@ -394,6 +441,51 @@ def _identificar_folhas(contas: list[ContaBalancete]) -> list[tuple[ContaBalance
             folhas.append((conta, []))
             i += 1
     return folhas
+
+
+def _identificar_folhas_por_classificacao(
+    contas: list[ContaBalancete],
+) -> list[tuple[ContaBalancete, list[str]]]:
+    """Reconstrói a hierarquia usando a coluna de classificação (código
+    hierárquico com pontos, ex.: "1.1.3.08.00001") em vez de reconciliação
+    de valores — bem mais robusto, porque não depende da ordem em que as
+    contas aparecem no PDF nem de nenhuma soma bater exatamente.
+
+    Uma conta é folha (analítica) quando nenhuma outra conta da lista tem
+    uma classificação que é "filha" dela (começa com "<classificacao>.").
+    Os ancestrais de uma folha são as contas cuja classificação é um
+    prefixo da dela (ex.: folha "1.1.1.01.00001" tem ancestrais nas
+    classificações "1", "1.1", "1.1.1", "1.1.1.01", se existirem na lista).
+    """
+    por_classificacao = {c.classificacao: c for c in contas if c.classificacao}
+    todas = sorted(por_classificacao.keys())
+
+    folhas: list[tuple[ContaBalancete, list[str]]] = []
+    for conta in contas:
+        if conta.classificacao is None:
+            continue
+        prefixo = conta.classificacao + "."
+        tem_filho = any(outra != conta.classificacao and outra.startswith(prefixo) for outra in todas)
+        if tem_filho:
+            continue
+
+        partes = conta.classificacao.split(".")
+        ancestrais = []
+        for i in range(1, len(partes)):
+            ancestral = por_classificacao.get(".".join(partes[:i]))
+            if ancestral is not None:
+                ancestrais.append(ancestral.descricao)
+        folhas.append((conta, ancestrais))
+    return folhas
+
+
+def _identificar_folhas(contas: list[ContaBalancete]) -> list[tuple[ContaBalancete, list[str]]]:
+    """Escolhe o método de reconstrução de hierarquia: por classificação
+    (mais robusto) quando toda conta tem esse campo preenchido, senão por
+    reconciliação de valores (layouts sem coluna de classificação)."""
+    if contas and all(c.classificacao for c in contas):
+        return _identificar_folhas_por_classificacao(contas)
+    return _identificar_folhas_por_reconciliacao(contas)
 
 
 def _validar_identidade_contabil(folhas: list[tuple[ContaBalancete, list[str]]]) -> None:
@@ -438,28 +530,84 @@ def _inferir_categoria(*textos: str) -> str:
 
 
 # \b evita falso positivo de "venda" dentro de "revenda" (conta de estoque, não receita).
-_PADRAO_PALAVRA_RECEITA = re.compile(
-    r"\b(receita|resultado bruto|venda|faturamento|servicos? prestados?)"
-)
+# "resultado bruto"/"resultado liquido" propositalmente NÃO entram aqui: são
+# ancestrais tanto de contas de receita quanto de custo/despesa num DRE real
+# (RESULTADO BRUTO tem RECEITA, CUSTOS e DESPESAS como ramos irmãos) — usá-los
+# como gatilho de receita classificava custo/despesa como receita.
+_PADRAO_PALAVRA_RECEITA = re.compile(r"\b(receita|venda|faturamento|servicos? prestados?)")
 _PALAVRAS_DESPESA = ("despesa", "custo", "cpv", "cmv")
 
+# "Estoque inicial"/"estoque final" dentro de CUSTOS DOS PRODUTOS VENDIDOS não
+# são despesas isoladas: são as duas pontas de uma fórmula de rateio
+# (CPV = estoque inicial + compras − estoque final), e só a combinação das
+# duas (o saldo líquido da conta sintética "CUSTOS DOS PRODUTOS VENDIDOS")
+# representa o custo do período de fato. Como o contrato de lançamentos só
+# aceita valor positivo (sem como subtrair um do outro aqui), contar só o
+# "estoque inicial" (que sozinho pode ser dezenas de milhões, o estoque
+# TOTAL da empresa, não um gasto do mês) infla a despesa em ordens de
+# grandeza — visto num balancete real (Termoquimica): R$ 91,68 milhões de
+# "estoque inicial" sozinho, contra um CPV líquido real de R$ 818 mil.
+# Sem suporte a valor com sinal na base do motor, a opção seria contável
+# é excluir os dois lados em vez de somar um deles como se fosse o custo
+# inteiro.
+_PALAVRAS_ROLLOVER_ESTOQUE = ("estoque inicial", "estoque final")
 
-def _classificar(conta: ContaBalancete, ancestrais: list[str]) -> Optional[tuple[str, str]]:
+
+def _classificar(conta: ContaBalancete, ancestrais: list[str]) -> Optional[tuple[str, str, str]]:
     """Decide se uma conta-folha é receita, despesa, ou nenhuma das duas
     (contas puramente patrimoniais, como saldo de caixa ou capital, não
-    entram como lançamento). Devolve (tipo, categoria) ou None.
+    entram como lançamento). Devolve (tipo, categoria, origem) ou None.
+
+    `origem` é "resultado" quando a conta vem de um ramo de receita/despesa/
+    custo de verdade (uma seção de Resultado/DRE no balancete), ou
+    "fornecedor_pagavel" quando vem só do saldo a pagar a um fornecedor
+    (PASSIVO CIRCULANTE, sem nenhuma seção de Resultado no balancete pra se
+    basear) — usado por `_montar_dataframe` pra não somar as duas coisas
+    juntas quando há dado de Resultado de verdade (ver lá o porquê).
     """
     caminho = " ".join(_normalizar(a) for a in ancestrais)
     descricao_norm = _normalizar(conta.descricao)
 
-    if _PADRAO_PALAVRA_RECEITA.search(caminho) or _PADRAO_PALAVRA_RECEITA.search(descricao_norm):
-        return "receita", _inferir_categoria(conta.descricao, *ancestrais)
+    if any(p in descricao_norm for p in _PALAVRAS_ROLLOVER_ESTOQUE):
+        return None
 
+    # Despesa/custo é checado ANTES de receita de propósito: um DRE real tem
+    # categorias como "DESPESAS COM VENDAS" ou "SERVIÇOS PRESTADOS POR
+    # TERCEIROS" que contêm "venda"/"serviços prestados" mas são despesa, não
+    # receita — o ancestral mais específico (despesa/custo) deve vencer.
     if any(p in caminho for p in _PALAVRAS_DESPESA):
-        return "despesa", _inferir_categoria(conta.descricao, *ancestrais)
+        # Dentro de um ramo de despesa/custo, a convenção é natureza D
+        # (devedora). Uma folha C aí dentro é um abatimento/estorno dentro
+        # da própria conta de custo (ex.: "(+) ESTOQUE FINAL" em CUSTOS DOS
+        # PRODUTOS VENDIDOS reduz o custo, não soma) — como o contrato de
+        # lançamentos só aceita valor sempre positivo (sem como subtrair),
+        # a opção segura é excluir em vez de somar como despesa errada.
+        if conta.natureza != "D":
+            return None
+        return "despesa", _inferir_categoria(conta.descricao, *ancestrais), "resultado"
+
+    if _PADRAO_PALAVRA_RECEITA.search(caminho) or _PADRAO_PALAVRA_RECEITA.search(descricao_norm):
+        # Convenção contábil comum: conta cuja descrição começa com "(-)" é
+        # uma conta redutora (dedução) — mesmo estando sob um ancestral
+        # "receita" (ex.: "(-) ICMS" sob "(-) Deduções da Receita Bruta" é
+        # imposto sobre venda, não receita). Só vale AQUI, quando a conta já
+        # ia ser classificada como receita — "(-)" sozinho não é sinal de
+        # despesa (contas de balanço como "(-) Depreciações Acumuladas" ou
+        # "(-) Prejuízos Acumulados" também começam com "(-)" e não são
+        # gasto do período; essas continuam caindo em `None` abaixo).
+        if conta.descricao.strip().startswith("(-)"):
+            if conta.natureza != "D":
+                return None
+            return "despesa", _inferir_categoria(conta.descricao, *ancestrais), "resultado"
+        # Receita "de verdade" é natureza C; uma folha D aqui é uma
+        # correção/estorno pontual (mesmo raciocínio do bloco de despesa
+        # acima) — exclui em vez de somar como receita errada.
+        if conta.natureza != "C":
+            return None
+        return "receita", _inferir_categoria(conta.descricao, *ancestrais), "resultado"
 
     if any("fornecedor" in _normalizar(a) for a in ancestrais):
-        return "despesa", _inferir_categoria(conta.descricao, *ancestrais)
+        return "despesa", _inferir_categoria(conta.descricao, *ancestrais), "fornecedor_pagavel"
 
     return None
 
@@ -486,7 +634,7 @@ def _montar_dataframe(
         classificacao = _classificar(conta, ancestrais)
         if classificacao is None:
             continue
-        tipo, categoria = classificacao
+        tipo, categoria, origem = classificacao
         linhas.append(
             {
                 "data": data_lancamento,
@@ -495,14 +643,32 @@ def _montar_dataframe(
                 "fornecedor": conta.descricao,
                 "valor": conta.saldo_atual,
                 "descricao": " > ".join([*ancestrais, conta.descricao]),
+                "_origem": origem,
             }
         )
+
+    # Quando o balancete tem uma seção de Resultado/DRE de verdade (pelo
+    # menos uma despesa vinda de lá), o saldo de fornecedores a pagar
+    # (PASSIVO CIRCULANTE) some dos lançamentos: é só o que ainda está em
+    # aberto no fim do período, não o total gasto no período — contar os
+    # dois juntos infla a despesa artificialmente (uma empresa com anos de
+    # operação sempre tem fornecedores a pagar, isso não é "gasto extra").
+    # Sem uma seção de Resultado (balancete só com saldos, como o primeiro
+    # testado neste projeto), o saldo a pagar é o único sinal de despesa
+    # disponível e continua sendo usado.
+    tem_resultado_de_verdade = any(
+        linha["_origem"] == "resultado" and linha["tipo"] == "despesa" for linha in linhas
+    )
+    if tem_resultado_de_verdade:
+        linhas = [linha for linha in linhas if linha["_origem"] != "fornecedor_pagavel"]
+
     if not linhas:
         raise LeitorBalanceteError(
             "Nenhuma conta de receita/despesa foi identificada no balancete. "
             "Verifique se o arquivo é mesmo um balancete/DRE contábil."
         )
-    return pd.DataFrame(linhas, columns=["data", "tipo", "categoria", "fornecedor", "valor", "descricao"])
+    df = pd.DataFrame(linhas, columns=["data", "tipo", "categoria", "fornecedor", "valor", "descricao", "_origem"])
+    return df.drop(columns="_origem")
 
 
 def processar_texto_balancete(texto: str) -> pd.DataFrame:
