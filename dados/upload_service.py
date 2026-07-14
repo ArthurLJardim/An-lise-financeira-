@@ -18,21 +18,21 @@ from typing import Any, BinaryIO
 
 import pandas as pd #dataframe
 
-from backend.upload.accounting_parser import AccountingStatementParser, ParseContext #AccountingStatementParser = reconhecer documentos contábeis
-from backend.upload.cleaner import DataCleaner #limpar
-from backend.upload.exceptions import UploadModuleError
-from backend.upload.models import FinancialDataset
-from backend.upload.normalizer import DataNormalizer #padronizar os dados
-from backend.upload.parser import get_parser #escolher o parser relacionado a extensão do documento
-from backend.upload.schemas import DocumentType, FileType
-from backend.upload.utils import (
+from dados.accounting_parser import AccountingStatementParser, ParseContext #AccountingStatementParser = reconhecer documentos contábeis
+from dados.cleaner import DataCleaner #limpar
+from dados.exceptions import UploadModuleError
+from dados.models import FinancialDataset
+from dados.normalizer import DataNormalizer #padronizar os dados
+from dados.parser import get_parser #escolher o parser relacionado a extensão do documento
+from dados.schemas import DocumentType, FileType
+from dados.utils import (
     dataframe_preview_text,
     detect_document_type,                               #identificar o tipo do documento
     extract_header_metadata,
     parse_monetary,
     setup_logger,
 )
-from backend.upload.validator import FileValidator
+from dados.validator import FileValidator
 
 logger = setup_logger(__name__)
 

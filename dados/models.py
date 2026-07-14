@@ -15,14 +15,14 @@ from typing import Any
 
 import pandas as pd
 
-from backend.upload.schemas import (
+from dados.schemas import (
     DatasetMetadata,
     DatasetStatistics,
     FinancialDatasetSchema,
     ProcessingErrorRecord,
     ProcessingWarning,
 )
-from backend.upload.utils import OUTPUTS_DIR, ensure_output_dirs
+from dados.utils import OUTPUTS_DIR, ensure_output_dirs
 
 
 class FinancialDataset:

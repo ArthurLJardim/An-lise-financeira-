@@ -18,8 +18,8 @@ from typing import Any
 
 import pandas as pd
 
-from backend.upload.exceptions import FileParsingError
-from backend.upload.utils import setup_logger
+from dados.exceptions import FileParsingError
+from dados.utils import setup_logger
 
 logger = setup_logger(__name__)
 

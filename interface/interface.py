@@ -38,6 +38,15 @@ except ImportError:
     )
     st.stop()
 
+try:
+    from fornecedores.recomendacoes import gerar_recomendacoes
+except ImportError:
+    st.error(
+        "Não foi possível importar `fornecedores.recomendacoes`. Confirme se o "
+        "arquivo está em `fornecedores/recomendacoes.py` na raiz do repo."
+    )
+    st.stop()
+
 
 
 # Tratamento de dados 
@@ -112,13 +121,6 @@ def alertas_para_dataframe(alertas: list) -> pd.DataFrame:
         for alerta in alertas
     ]
     return pd.DataFrame(linhas)
-
-
-def gerar_recomendacoes(dados: pd.DataFrame) -> pd.DataFrame:
-    return pd.DataFrame(columns=[
-        "fornecedor", "acao_recomendada", "fornecedor_alternativo", "economia_estimada"
-    ])
-
 
 
 # Barra lateral
@@ -207,7 +209,7 @@ resultado = engine.analisar(dados_filtrados, orcamento=orcamento, historico=hist
 
 resumo = resultado.resumo
 alertas = alertas_para_dataframe(resultado.alertas)
-recomendacoes = gerar_recomendacoes(dados_filtrados)
+recomendacoes = gerar_recomendacoes(resultado.alertas, dados_filtrados)
 
 
 # Cards de resumo 
@@ -221,7 +223,7 @@ if isinstance(maior_aumento, dict) and maior_aumento.get("categoria"):
     coluna2.metric(
         "📈 Maior Aumento",
         maior_aumento["categoria"],
-        f"{maior_aumento.get('variacao_percentual', 0) * 100:+.1f}%",
+        f"{maior_aumento.get('variacao_percentual', 0):+.1f}%",
     )
 elif maior_aumento:
     coluna2.metric("📈 Maior Aumento", str(maior_aumento))
@@ -231,7 +233,7 @@ else:
 economia_total = recomendacoes["economia_estimada"].sum() if not recomendacoes.empty else 0.0
 coluna3.metric("♻️ Economia Estimada", f"R$ {economia_total:,.2f}")
 if recomendacoes.empty:
-    coluna3.caption("Aguardando módulo de recomendações de fornecedores (João Thiago).")
+    coluna3.caption("Nenhum alerta no período — sem estouro de orçamento/histórico para recomendar ação.")
 
 st.divider()
 
@@ -245,10 +247,10 @@ ranking_categoria = resultado.rankings["por_categoria"]
 grafico = px.bar(
     ranking_categoria,
     x="categoria",
-    y="valor",
+    y="total",
     text_auto=".2s",
-    labels={"categoria": "Categoria", "valor": "Valor (R$)"},
-    color="valor",
+    labels={"categoria": "Categoria", "total": "Valor (R$)"},
+    color="total",
     color_continuous_scale="Blues",
 )
 grafico.update_layout(showlegend=False, coloraxis_showscale=False)
@@ -287,16 +289,17 @@ st.subheader("🤝 Fornecedores e Recomendações de Economia")
 
 if recomendacoes.empty:
     st.info(
-        "Módulo de recomendações de fornecedores (João Thiago) ainda não "
-        "integrado — quando estiver pronto, `gerar_recomendacoes` deve "
-        "chamá-lo em vez de devolver uma tabela vazia."
+        "Nenhuma recomendação a exibir: o motor só gera alertas quando há "
+        "orçamento e/ou histórico para comparar (barra lateral, item 3) e "
+        "algum estouro é identificado."
     )
 else:
     st.dataframe(
         recomendacoes.rename(columns={
             "fornecedor": "Fornecedor",
+            "categoria": "Categoria",
+            "severidade": "Severidade",
             "acao_recomendada": "Ação Recomendada",
-            "fornecedor_alternativo": "Alternativa Sugerida",
             "economia_estimada": "Economia Estimada (R$)",
         }).style.format({"Economia Estimada (R$)": "R$ {:,.2f}"}),
         use_container_width=True,

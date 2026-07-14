@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
 """
+Analisador de Balancete Empresarial (script standalone) - Joao Thiago Peixoto Luzine
+--------------------------------------------------------------------------------------
+NOTA DE INTEGRACAO: este script roda sozinho (le seu proprio arquivo, calcula
+sua propria variacao/severidade e escreve seu proprio relatorio) e nao usa
+motor_analise nem o contrato de lancamentos - ele foi escrito antes da
+integracao entre os modulos do grupo. A logica de recomendacao por
+palavra-chave (`sugerir_recomendacao`) foi extraida e adaptada para
+`fornecedores/recomendacoes.py`, que consome os alertas ja calculados pelo
+motor_analise (evitando recalcular variacao/severidade do zero) e e' o que
+`interface/interface.py` usa de fato. Este arquivo continua funcional como
+ferramenta standalone (ex.: analisar um CSV avulso fora do fluxo do bot).
+
 Analisador de Balancete Empresarial
 ------------------------------------
 Le um balancete (CSV ou Excel), calcula variacoes entre periodos,
@@ -7,7 +19,7 @@ gera ranking de gastos, alertas por severidade e recomendacoes de
 economia / renegociacao / fornecedores alternativos.
 
 USO:
-    python analisador_balancete.py caminho/para/balancete.csv
+    python fornecedores/analisador_balancete_standalone.py caminho/para/balancete.csv
     python analisador_balancete.py caminho/para/balancete.xlsx --saida relatorio.txt
 
 FORMATO ESPERADO DO ARQUIVO DE ENTRADA (nomes de coluna flexiveis):

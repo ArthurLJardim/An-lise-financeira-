@@ -19,4 +19,21 @@ Os cards de resumo do esboço mapeiam assim:
 |---------------------|----------------------------------------------------------|
 | Gasto total          | `resultado.resumo["gasto_total"]`                        |
 | Maior aumento         | `resultado.resumo["maior_aumento"]`                       |
-| Economia estimada    | módulo de fornecedores (João Thiago) — não vem do motor  |
+| Economia estimada    | `fornecedores.recomendacoes.gerar_recomendacoes(...)`  |
+
+## Estado atual
+
+[`interface.py`](interface.py) já implementa isso em Streamlit — upload
+(PDF/Excel/CSV), filtros de mês/categoria/fornecedor, cards de resumo,
+gráfico de gastos por categoria (Plotly), tabela de alertas e tabela de
+recomendações, ligado a `motor_analise`, `dados.leitor_balancete` e
+`fornecedores.recomendacoes`.
+
+```bash
+streamlit run interface/interface.py
+```
+
+Testado manualmente ponta a ponta (upload de lançamentos + orçamento →
+alertas → recomendações → gráfico), sem erros no console. Falta ligar os
+botões de exportação (Excel/PDF) — hoje desabilitados — a
+`motor_analise.relatorio.gerar_relatorio`.

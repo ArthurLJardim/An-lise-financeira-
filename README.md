@@ -69,6 +69,28 @@ nenhuma. Também aceita um arquivo já tratado (`.xlsx`/`.csv`) no formato
 interno descrito em [`docs/CONTRATO_DADOS.md`](docs/CONTRATO_DADOS.md), útil
 para dados sintéticos de teste.
 
+## Recomendações de fornecedores (`fornecedores/`)
+
+[`fornecedores/recomendacoes.py`](fornecedores/recomendacoes.py) consome os
+`alertas` do motor e sugere ação por categoria (cotar fornecedor alternativo,
+renegociar aluguel, auditar consumo de energia etc.), com prioridade pela
+severidade e uma estimativa de economia (quanto a categoria gastou acima da
+referência). Também existe
+[`fornecedores/analisador_balancete_standalone.py`](fornecedores/analisador_balancete_standalone.py),
+um script independente (não integrado ao motor) útil para analisar um CSV/Excel avulso fora do fluxo do bot.
+
+## Interface (`interface/`)
+
+App em Streamlit ([`interface/interface.py`](interface/interface.py)): upload
+do balancete (PDF/Excel/CSV), filtros por mês/categoria/fornecedor, cards de
+resumo, gráfico de gastos por categoria, tabela de alertas e tabela de
+recomendações — já ligado ao motor, ao leitor de balancete e ao módulo de
+recomendações.
+
+```bash
+streamlit run interface/interface.py
+```
+
 ## Rodando localmente
 
 ```bash
@@ -80,7 +102,10 @@ python examples/exemplo_uso.py
 # analisar um arquivo próprio e abrir o relatório no Bloco de Notas
 python analisar_documento.py examples/dados_exemplo.csv --orcamento examples/orcamento_exemplo.csv
 
-# testes do motor de análise financeira
+# interface web (upload, filtros, gráficos, alertas, recomendações)
+streamlit run interface/interface.py
+
+# testes automatizados (motor, leitor de balancete, recomendações)
 pytest
 ```
 
@@ -89,9 +114,9 @@ pytest
 ```
 docs/                contrato de dados entre os módulos
 motor_analise/        motor de análise financeira (Arthur)
-dados/                 entrada e tratamento dos dados (Eduardo) — já lê balancete em PDF
-fornecedores/           análise de fornecedores e recomendações (João Thiago)
-interface/              interface, relatórios e apresentação (Miguel)
+dados/                 entrada e tratamento dos dados (Eduardo) — lê balancete em PDF/Excel/CSV
+fornecedores/           recomendações de economia e fornecedores (João Thiago)
+interface/              interface Streamlit (Miguel)
 examples/              dados sintéticos e script de uso end-to-end
 tests/                  testes automatizados
 analisar_documento.py  CLI: analisa um arquivo e gera o relatório .txt

@@ -12,8 +12,8 @@ from typing import Any
 
 import pandas as pd
 
-from backend.upload.schemas import ProcessingErrorRecord, ProcessingWarning
-from backend.upload.utils import INVALID_CHARS_PATTERN, setup_logger
+from dados.schemas import ProcessingErrorRecord, ProcessingWarning
+from dados.utils import INVALID_CHARS_PATTERN, setup_logger
 
 logger = setup_logger(__name__)
 

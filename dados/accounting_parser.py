@@ -19,8 +19,8 @@ from typing import Any
 
 import pandas as pd
 
-from backend.upload.exceptions import FileParsingError
-from backend.upload.utils import (
+from dados.exceptions import FileParsingError
+from dados.utils import (
     detect_document_type,
     extract_header_metadata,
     extract_natureza,
@@ -357,7 +357,7 @@ class AccountingStatementParser:
         raw_text: str,
         filename: str,
     ) -> pd.DataFrame:
-        from backend.upload.parser import PDFParser
+        from dados.parser import PDFParser
 
         pdf_parser = PDFParser()
         try:

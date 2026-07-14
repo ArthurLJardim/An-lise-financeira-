@@ -37,6 +37,35 @@ a partir de um exemplo real (a arquitetura já foi pensada pra isso), não
 assumir que o layout testado até agora é a regra geral.
 
 Próximos passos naturais pra esse módulo: coletar balancetes reais de mais
-contadores/sistemas pra cadastrar novos layouts, leitura de balancete em
-Excel, e ampliar/curar o vocabulário de categorias com mais planos de conta
-reais.
+contadores/sistemas pra cadastrar novos layouts, e ampliar/curar o
+vocabulário de categorias com mais planos de conta reais.
+
+## Pipeline ETL (Excel/CSV/PDF) — `upload_service.py` e módulos de apoio
+
+Também existe um pipeline mais amplo (validação → parsing → limpeza →
+normalização → categorização por JSON externo em `dados/config/`), com
+`FinancialDataset` serializável e API FastAPI opcional (`dados/api.py`):
+
+```python
+from dados.upload_service import process_uploaded_file
+
+dataset = process_uploaded_file(conteudo_em_bytes, "arquivo.xlsx")
+dataset.to_dict()  # ou dataset.to_dataframe()
+```
+
+Estava com dois bugs que impediam qualquer coisa de rodar (corrigidos): os
+imports internos apontavam para `backend.upload.*` em vez de `dados.*`, e
+`categories.json`/`column_aliases.json` foram movidos para `dados/config/`
+pra bater com o caminho que o código espera. Testado contra CSV (funciona
+bem, categoriza automaticamente) e contra PDF (identifica corretamente
+empresa/CNPJ/período/tipo de documento, mas a separação de
+saldo anterior/débito/crédito/saldo atual em colunas própria ainda tem
+arestas para PDFs — segue como próximo passo).
+
+Este pipeline e o `leitor_balancete.py` continuam sendo dois caminhos
+independentes e complementares para "entrada de dados": use
+`ler_balancete_pdf` quando o objetivo é já chegar direto no formato de
+lançamentos do motor a partir de um balancete em PDF; use
+`process_uploaded_file` para Excel/CSV genéricos, ou quando precisar dos
+metadados/estatísticas extras (empresa, CNPJ, gastos por fornecedor etc.)
+que só o pipeline ETL calcula.

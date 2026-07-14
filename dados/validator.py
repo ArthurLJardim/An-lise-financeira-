@@ -12,9 +12,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO
 
-from backend.upload.exceptions import FileValidationError, UnsupportedFileTypeError
-from backend.upload.schemas import FileType
-from backend.upload.utils import setup_logger
+from dados.exceptions import FileValidationError, UnsupportedFileTypeError
+from dados.schemas import FileType
+from dados.utils import setup_logger
 
 logger = setup_logger(__name__)
 

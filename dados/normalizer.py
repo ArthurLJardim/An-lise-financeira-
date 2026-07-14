@@ -11,9 +11,9 @@ from typing import Any
 
 import pandas as pd
 
-from backend.upload.cleaner import DataCleaner
-from backend.upload.schemas import ProcessingErrorRecord
-from backend.upload.utils import (
+from dados.cleaner import DataCleaner
+from dados.schemas import ProcessingErrorRecord
+from dados.utils import (
     load_json_config,
     map_column_names,
     normalize_text,

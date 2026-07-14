@@ -12,9 +12,9 @@ from typing import Any # significa que o valor recebido pode ser de qualquer tip
 from fastapi import FastAPI, File, HTTPException, UploadFile       #FastAPI = cria servidor; File = indica para o FastAPI que é um arquivo; HTTPException = devolver erros; UploadFile = representa o arquivo enviado pelo usuário
 from pydantic import BaseModel #verifica se a estrutura está correta
 
-from backend.upload.exceptions import FileValidationError, UploadModuleError #erros personalizados
-from backend.upload.models import FinancialDataset #objeto final / tudo que o parser produzir vai terminar nessa classe
-from backend.upload.upload_service import process_uploaded_file
+from dados.exceptions import FileValidationError, UploadModuleError #erros personalizados
+from dados.models import FinancialDataset #objeto final / tudo que o parser produzir vai terminar nessa classe
+from dados.upload_service import process_uploaded_file
 
 app = FastAPI(
     title="Módulo ETL Financeiro",
