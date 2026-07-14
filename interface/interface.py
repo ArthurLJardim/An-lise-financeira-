@@ -6,6 +6,7 @@ Contei com auxilio da IA para gerar o parte do código da interface
 
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import plotly.express as px
@@ -21,6 +22,7 @@ st.set_page_config(
 
 try:
     from motor_analise import AnaliseFinanceira
+    from motor_analise.modelos import CATEGORIAS_PADRAO, TIPOS_LANCAMENTO
 except ImportError:
     st.error(
         "Não foi possível importar `motor_analise`. Rode este app a partir da "
@@ -30,7 +32,11 @@ except ImportError:
     st.stop()
 
 try:
-    from dados.leitor_balancete import LeitorBalanceteError, ler_balancete_pdf
+    from dados.leitor_balancete import (
+        LeitorBalanceteError,
+        extrair_metadados_balancete,
+        ler_balancete_pdf,
+    )
 except ImportError:
     st.error(
         "Não foi possível importar `dados.leitor_balancete`. Confirme se o "
@@ -54,12 +60,17 @@ except ImportError:
 COLUNAS_OBRIGATORIAS = {"data", "categoria", "fornecedor", "valor"}
 
 
-def tratar_dados(arquivo_enviado) -> pd.DataFrame:
+def tratar_dados(arquivo_enviado) -> tuple[pd.DataFrame, Optional[dict]]:
     """Converte o arquivo enviado no DataFrame de lançamentos do contrato
     (CONTRATO_DADOS.md, seção 3): colunas `data`, `categoria`, `fornecedor`,
     `valor` (+ `tipo`, `produto`, `descricao` opcionais).
+
+    Devolve `(dados, metadados)` — `metadados` (empresa/CNPJ/período do
+    cabeçalho) só vem preenchido quando o arquivo é um balancete em PDF;
+    para Excel/CSV já tratados não há cabeçalho contábil pra extrair.
     """
     nome = arquivo_enviado.name.lower()
+    metadados = None
 
     if nome.endswith(".pdf"):
         # Balancete real de contabilidade -> usa o leitor do Eduardo.
@@ -69,8 +80,8 @@ def tratar_dados(arquivo_enviado) -> pd.DataFrame:
             caminho_tmp = Path(tmp.name)
         try:
             dados = ler_balancete_pdf(caminho_tmp)
+            metadados = extrair_metadados_balancete(caminho_tmp)
         except LeitorBalanceteError as erro:
-            
             raise ValueError(str(erro)) from erro
         finally:
             caminho_tmp.unlink(missing_ok=True)
@@ -85,7 +96,7 @@ def tratar_dados(arquivo_enviado) -> pd.DataFrame:
     else:
         raise ValueError(f"Formato de arquivo não suportado: {arquivo_enviado.name}")
 
-    return _validar_e_completar(dados)
+    return _validar_e_completar(dados), metadados
 
 
 def _validar_e_completar(dados: pd.DataFrame) -> pd.DataFrame:
@@ -140,12 +151,29 @@ with st.sidebar:
     )
 
     if arquivo_enviado is not None:
-        try:
-            st.session_state.dados = tratar_dados(arquivo_enviado)
+        # Sem essa checagem, `tratar_dados` reprocessaria o arquivo do zero a
+        # cada interação (inclusive editar a tabela de revisão abaixo),
+        # sobrescrevendo qualquer correção que o usuário tenha feito.
+        identificador = f"{arquivo_enviado.name}:{arquivo_enviado.size}"
+        if st.session_state.get("arquivo_processado") != identificador:
+            try:
+                st.session_state.dados, st.session_state.metadados = tratar_dados(arquivo_enviado)
+                st.session_state.arquivo_processado = identificador
+            except ValueError as erro:
+                st.error(f"Erro ao processar o arquivo: {erro}")
+                st.session_state.dados = None
+                st.session_state.arquivo_processado = None
+
+        if st.session_state.dados is not None:
             st.success(f"Arquivo '{arquivo_enviado.name}' carregado com sucesso!")
-        except ValueError as erro:
-            st.error(f"Erro ao processar o arquivo: {erro}")
-            st.session_state.dados = None
+            metadados = st.session_state.get("metadados")
+            if metadados and (metadados.get("empresa") or metadados.get("cnpj")):
+                partes = [
+                    f"**{metadados[campo]}**" if campo == "empresa" else metadados[campo]
+                    for campo in ("empresa", "cnpj", "periodo")
+                    if metadados.get(campo)
+                ]
+                st.caption(" · ".join(partes))
 
     st.divider()
 
@@ -201,15 +229,49 @@ if dados_filtrados.empty:
     st.warning("Nenhum dado encontrado para os filtros selecionados.")
     st.stop()
 
+
+# Revisão antes de analisar
+
+st.subheader("👀 Revisar lançamentos antes de analisar")
+st.caption(
+    "Categoria e tipo (receita/despesa) são classificados automaticamente por "
+    "palavra-chave a partir do balancete e podem errar em planos de conta fora "
+    "do usual — corrija aqui antes de rodar a análise. Data e fornecedor não "
+    "são editáveis nesta tabela."
+)
+opcoes_categoria = sorted(set(CATEGORIAS_PADRAO) | set(dados_filtrados["categoria"].unique()))
+colunas_exibidas = [c for c in dados_filtrados.columns if c != "mes_ano"]
+dados_revisados = st.data_editor(
+    dados_filtrados,
+    column_order=colunas_exibidas,
+    column_config={
+        "categoria": st.column_config.SelectboxColumn("Categoria", options=opcoes_categoria, required=True),
+        "tipo": st.column_config.SelectboxColumn("Tipo", options=list(TIPOS_LANCAMENTO), required=True),
+        "valor": st.column_config.NumberColumn("Valor (R$)", min_value=0.0, format="R$ %.2f", required=True),
+        "data": st.column_config.DateColumn("Data", disabled=True),
+        "fornecedor": st.column_config.TextColumn("Fornecedor", disabled=True),
+        "descricao": st.column_config.TextColumn("Descrição", disabled=True),
+    },
+    use_container_width=True,
+    hide_index=True,
+    num_rows="fixed",
+    key="editor_lancamentos",
+)
+# Grava as correções de volta no dataset completo (por índice), pra persistir
+# entre trocas de filtro e não perder a edição quando o app renderizar de novo.
+st.session_state.dados.loc[dados_revisados.index, dados_revisados.columns] = dados_revisados
+
+st.divider()
+
 orcamento = pd.read_csv(arquivo_orcamento) if arquivo_orcamento is not None else None
 historico = pd.read_csv(arquivo_historico) if arquivo_historico is not None else None
 
 engine = AnaliseFinanceira()
-resultado = engine.analisar(dados_filtrados, orcamento=orcamento, historico=historico)
+resultado = engine.analisar(dados_revisados, orcamento=orcamento, historico=historico)
 
 resumo = resultado.resumo
 alertas = alertas_para_dataframe(resultado.alertas)
-recomendacoes = gerar_recomendacoes(resultado.alertas, dados_filtrados)
+recomendacoes = gerar_recomendacoes(resultado.alertas, dados_revisados)
 
 
 # Cards de resumo 

@@ -24,8 +24,10 @@ Os cards de resumo do esboço mapeiam assim:
 ## Estado atual
 
 [`interface.py`](interface.py) já implementa isso em Streamlit — upload
-(PDF/Excel/CSV), filtros de mês/categoria/fornecedor, cards de resumo,
-gráfico de gastos por categoria (Plotly), tabela de alertas e tabela de
+(PDF/Excel/CSV), filtros de mês/categoria/fornecedor, **tabela de revisão
+editável** (categoria/tipo/valor, antes de rodar a análise — mitiga erro de
+classificação automática do leitor de balancete), cards de resumo, gráfico
+de gastos por categoria (Plotly), tabela de alertas e tabela de
 recomendações, ligado a `motor_analise`, `dados.leitor_balancete` e
 `fornecedores.recomendacoes`.
 

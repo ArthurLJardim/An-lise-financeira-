@@ -12,3 +12,9 @@ PyPDF2>=3.0
 # interface/ (Miguel) - app Streamlit
 streamlit>=1.30
 plotly>=5.20
+
+# dados/leitor_balancete.py - OCR (fallback para balancete em PDF escaneado/
+# imagem, sem camada de texto). Também requer o motor Tesseract OCR instalado
+# no sistema (não é um pacote Python) - ver dados/README.md.
+pytesseract>=0.3
+pypdfium2>=4.0

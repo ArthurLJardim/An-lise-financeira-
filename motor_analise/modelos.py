@@ -24,6 +24,7 @@ CATEGORIAS_PADRAO = (
     "folha",
     "transporte",
     "servicos",
+    "impostos",
     "outros",
 )
 

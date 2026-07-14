@@ -42,7 +42,7 @@ nela que o parser se apoia — ver seção 2.
 1. Ler o balancete (PDF ou Excel) enviado pela empresa.
 2. Identificar as contas analíticas do período (ignorando as sintéticas/totalizadoras).
 3. Classificar cada conta em receita ou despesa e em uma categoria padronizada
-   (`mercadorias`, `energia`, `aluguel`, `folha`, `transporte`, `servicos`, `outros`),
+   (`mercadorias`, `energia`, `aluguel`, `folha`, `transporte`, `servicos`, `impostos`, `outros`),
    a partir da descrição da conta e/ou do nome do fornecedor.
 4. Gerar o `pandas.DataFrame` de **lançamentos** descrito na seção 3 — esse sim é o
    contrato interno consumido pelo motor.
@@ -68,14 +68,25 @@ ordem o PDF grava as colunas dentro do texto (não necessariamente a ordem
 visual da tabela — ver o docstring de `dados/leitor_balancete.py` pra
 detalhes). Por isso o parser mantém um registro de layouts conhecidos
 (`_LAYOUTS_CONHECIDOS`) e escolhe automaticamente qual bate usando a
-reconciliação de valores como critério — mas **só existe um layout
-cadastrado até agora**, validado contra o único balancete real testado até
-o momento. Isso não é um parser universal pronto; é uma arquitetura pensada
-pra virar universal conforme mais exemplos reais (de outros contadores/
-sistemas) forem aparecendo — quando um balancete vier de um sistema
-diferente e o layout não bater, o parser falha alto (`LeitorBalanceteError`)
-em vez de arriscar números errados, e o ajuste é cadastrar um novo layout a
-partir desse exemplo real, não redesenhar em cima de um único caso.
+reconciliação de valores como critério — mas **só existem dois layouts
+cadastrados até agora**: o "reverso" (validado contra o único balancete
+real testado até o momento) e o "natural" (a ordem visual da própria
+tabela, testado só contra PDF sintético — ainda sem confirmação num
+balancete real). Isso não é um parser universal pronto; é uma arquitetura
+pensada pra virar universal conforme mais exemplos reais (de outros
+contadores/sistemas) forem aparecendo — quando um balancete vier de um
+sistema diferente e nenhum layout bater, o parser falha alto
+(`LeitorBalanceteError`) em vez de arriscar números errados, e o ajuste é
+cadastrar um novo layout a partir desse exemplo real (passo a passo no
+docstring do módulo), não redesenhar em cima dos poucos casos conhecidos.
+
+Além da reconciliação por conta, há uma segunda camada de segurança:
+`_validar_identidade_contabil` confere se o total das contas devedoras
+bate com o total das credoras depois da reconstrução de hierarquia — uma
+identidade contábil universal (débito total = crédito total, em qualquer
+balancete válido) que pega o caso em que um balancete lista as contas fora
+da pré-ordem que o algoritmo de hierarquia assume, e que de outra forma
+passaria silenciosamente com números errados.
 
 Outras limitações conhecidas:
 
@@ -84,7 +95,13 @@ Outras limitações conhecidas:
 - Planos de contas muito diferentes do usual (nomes de conta fora do
   vocabulário de palavras-chave) podem cair em `categoria = "outros"` ou não
   ser reconhecidos como receita/despesa — ajustar as palavras-chave em
-  `dados/leitor_balancete.py` conforme aparecerem casos novos.
+  `dados/leitor_balancete.py` conforme aparecerem casos novos. O vocabulário
+  já cobre um plano de contas brasileiro razoavelmente amplo (energia,
+  aluguel, folha, transporte, serviços, impostos, mercadorias).
+- PDF sem camada de texto (documento escaneado/foto) cai automaticamente em
+  OCR (Tesseract via `pytesseract`/`pypdfium2`) — precisa do motor Tesseract
+  instalado no sistema; sem ele, erro claro em vez de travar. Ver
+  `dados/README.md`.
 
 ## 3. Contrato interno — lançamentos (entrada do `motor_analise`)
 
@@ -116,7 +133,7 @@ formato de tabela.
 
 ### Categorias padrão reconhecidas
 
-`mercadorias`, `energia`, `aluguel`, `folha`, `transporte`, `servicos`, `outros`
+`mercadorias`, `energia`, `aluguel`, `folha`, `transporte`, `servicos`, `impostos`, `outros`
 
 Categorias fora dessa lista não quebram o motor (são tratadas como uma
 categoria qualquer), mas o ideal é que o módulo de tratamento de dados

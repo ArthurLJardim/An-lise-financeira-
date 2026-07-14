@@ -25,18 +25,35 @@ nem sempre é a ordem visual da tabela — ver `_LAYOUTS_CONHECIDOS`). Cada
 sistema/contador pode gerar isso de um jeito diferente; o parser tenta os
 layouts conhecidos e usa a reconciliação de valores pra confirmar qual
 bateu, mas só suporta de fato os layouts cadastrados em `_LAYOUTS_CONHECIDOS`
-— hoje, só o layout validado contra o balancete de exemplo testado. Um
-balancete de outro contador/sistema pode ter um layout diferente e falhar
-com `LeitorBalanceteError`; nesse caso, o ajuste é registrar um novo
-layout aqui a partir de um exemplo real, não redesenhar o bot em torno de
-um exemplo só.
+— hoje, dois: o "reverso" (validado contra um balancete real) e o
+"natural" (a ordem visual da própria tabela, sem inversão — testado só
+contra PDF sintético, ainda não contra um balancete real desse tipo). Um
+balancete de outro contador/sistema pode ter um layout diferente dos dois
+e falhar com `LeitorBalanceteError`.
+
+Como adicionar suporte a um novo layout, a partir de um balancete real que
+falhou:
+1. Rode `pypdf.PdfReader(caminho).pages[0].extract_text()` e veja a ordem
+   real em que os campos aparecem no texto (não confie na ordem visual do
+   PDF — pypdf às vezes extrai em outra ordem, como aconteceu no primeiro
+   layout).
+2. Escreva um novo `re.compile(...)` com grupos nomeados `atual`,
+   `natureza`, `credito`, `debito`, `anterior`, `codigo`, `descricao` que
+   capture essa ordem, e acrescente à lista `_LAYOUTS_CONHECIDOS`.
+3. Não precisa mexer em mais nada — `_parse_linhas_texto` testa todos os
+   layouts cadastrados e escolhe automaticamente o que reconcilia 100%
+   (`_reconcilia`), e `_validar_identidade_contabil` pega qualquer
+   reconstrução de hierarquia que não tenha fechado certo.
+4. Adicione um teste em `tests/test_leitor_balancete.py` com esse layout
+   (dados fictícios, não o balancete real) — ver `TestLayoutNatural` como
+   modelo.
 
 Limitação conhecida: um balancete é uma foto de saldos acumulados do
 período, sem data por lançamento — todas as linhas geradas usam a data de
 fim do período como `data`. A classificação de receita/despesa e a
 categoria são inferidas por palavras-chave na conta e nos seus
 ancestrais; balancetes com um plano de contas muito diferente do usual
-podem precisar de ajuste nessas palavras-chave.
+podem precisar de ajuste nessas palavras-chave (`_PALAVRAS_CATEGORIA`).
 """
 
 from __future__ import annotations
@@ -51,9 +68,15 @@ from typing import Optional
 import pandas as pd
 import pypdf
 
-EPS = 0.01
+from dados.utils import detect_document_type, extract_header_metadata
 
-_NUM = r"\d{1,3}(?:\.\d{3})*,\d{2}"
+EPS = 0.01
+EPS_IDENTIDADE_CONTABIL = 1.0
+
+# Número no formato brasileiro. Tolerante ao separador de milhar (aceita
+# "58000,00" e "58.000,00") — nem todo sistema agrupa milhares, e exigir
+# isso rejeitaria balancetes válidos de sistemas que não agrupam.
+_NUM = r"\d[\d.]*,\d{2}"
 
 # Layouts conhecidos de linha de conta, tentados nesta ordem. Cada um assume
 # uma ordem diferente para os 4 valores monetários (saldo atual, crédito,
@@ -66,17 +89,54 @@ _NUM = r"\d{1,3}(?:\.\d{3})*,\d{2}"
 # qual layout bate por reconciliação de valores (ver `_reconcilia`).
 _LAYOUTS_CONHECIDOS: list[re.Pattern[str]] = [
     # "reverso": saldo atual, crédito, débito, saldo anterior, código, descrição.
+    # Único layout validado contra um balancete real até agora.
     re.compile(
         rf"(?P<atual>{_NUM})(?P<natureza>[DC])(?P<credito>{_NUM})(?P<debito>{_NUM})"
         rf"(?P<anterior>{_NUM})(?P<codigo>\d+)\s+(?P<descricao>.+)$"
+    ),
+    # "natural": código, descrição, saldo anterior, débito, crédito, saldo
+    # atual — a ordem visual da própria tabela, sem inversão. É o jeito mais
+    # intuitivo de gravar o texto, mas ainda não validado contra um PDF real
+    # (só contra um PDF sintético gerado localmente); mantido aqui como
+    # segunda tentativa, escolhida automaticamente só se reconciliar 100%.
+    re.compile(
+        rf"(?P<codigo>\d+)\s+(?P<descricao>\D+?)\s+(?P<anterior>{_NUM})\s+"
+        rf"(?P<debito>{_NUM})\s+(?P<credito>{_NUM})\s+(?P<atual>{_NUM})(?P<natureza>[DC])\s*$"
     ),
 ]
 
 _PADRAO_PERIODO = re.compile(r"(\d{2}/\d{2}/\d{4})\s*-\s*(\d{2}/\d{2}/\d{4})")
 
+# Vocabulário de palavras-chave por categoria. Checado nesta ordem (primeira
+# que bater vence) — categorias com termos mais específicos vêm antes das
+# mais genéricas ("mercadorias" por último, já que "compra"/"produto" são
+# termos largos que apareceriam em descrições de outras categorias também.
+# Cobertura ampla de plano de contas brasileiro, mas continua sendo um
+# dicionário de palavras-chave: planos de conta muito fora do usual podem
+# cair em "outros" — ver docs/CONTRATO_DADOS.md sobre esse limite.
 _PALAVRAS_CATEGORIA = (
-    (("energia", "eletrica", "luz"), "energia"),
-    (("aluguel", "condominio", "locacao"), "aluguel"),
+    (
+        (
+            "energia",
+            "eletrica",
+            "luz",
+            "cpfl",
+            "enel",
+            "cemig",
+            "light",
+            "eletropaulo",
+            "copel",
+            "coelba",
+            "celesc",
+            "energisa",
+            "equatorial",
+            "neoenergia",
+            "elektro",
+            "distribuidora de energia",
+        ),
+        "energia",
+    ),
+    (("aluguel", "condominio", "locacao", "arrendamento", "imovel"), "aluguel"),
     (
         (
             "salario",
@@ -87,14 +147,92 @@ _PALAVRAS_CATEGORIA = (
             "vale transporte",
             "vale-transporte",
             "vale alimentacao",
+            "vale-alimentacao",
+            "vale refeicao",
+            "vale-refeicao",
             "pessoal",
             "encargo",
+            "pro labore",
+            "pro-labore",
+            "decimo terceiro",
+            "13o salario",
+            "ferias",
+            "rescisao",
+            "beneficio",
+            "plano de saude",
         ),
         "folha",
     ),
-    (("transporte", "frete", "combustivel", "logistica"), "transporte"),
-    (("servico", "contabil", "manutencao", "internet", "telefonia", "assessoria"), "servicos"),
-    (("mercadoria", "compra", "revenda", "fornecedor", "insumo", "produto"), "mercadorias"),
+    (
+        (
+            "transporte",
+            "frete",
+            "combustivel",
+            "logistica",
+            "pedagio",
+            "gasolina",
+            "diesel",
+            "etanol",
+            "posto de combustivel",
+            "seguro veicular",
+            "manutencao de veiculo",
+            "transportadora",
+        ),
+        "transporte",
+    ),
+    (
+        (
+            "servico",
+            "contabil",
+            "manutencao",
+            "internet",
+            "telefonia",
+            "assessoria",
+            "consultoria",
+            "honorario",
+            "advocacia",
+            "juridico",
+            "software",
+            "licenca de uso",
+            "assinatura",
+            "tecnologia da informacao",
+            "terceirizado",
+            "mao de obra terceirizada",
+        ),
+        "servicos",
+    ),
+    (
+        (
+            "imposto",
+            "tributo",
+            "icms",
+            "iss",
+            "irpj",
+            "csll",
+            "pis",
+            "cofins",
+            "simples nacional",
+            "darf",
+            "taxa",
+            "multa fiscal",
+        ),
+        "impostos",
+    ),
+    (
+        (
+            "mercadoria",
+            "compra",
+            "revenda",
+            "fornecedor",
+            "insumo",
+            "produto",
+            "materia prima",
+            "materia-prima",
+            "cmv",
+            "custo da mercadoria",
+        ),
+        "mercadorias",
+    ),
 )
 
 
@@ -258,6 +396,39 @@ def _identificar_folhas(contas: list[ContaBalancete]) -> list[tuple[ContaBalance
     return folhas
 
 
+def _validar_identidade_contabil(folhas: list[tuple[ContaBalancete, list[str]]]) -> None:
+    """Confere se a soma das folhas devedoras bate com a soma das credoras.
+
+    Em qualquer balancete válido, de qualquer plano de contas ou sistema,
+    débito total = crédito total (é a própria definição de "balancete" —
+    verificar esse equilíbrio). Como cada conta agregadora foi substituída
+    pelas suas folhas (mesma soma, mesma natureza), essa igualdade também
+    vale só entre as folhas identificadas — é uma conferência independente
+    do layout e do algoritmo de reconciliação de hierarquia.
+
+    Isso existe porque `_identificar_folhas` assume que o balancete lista
+    as contas em pré-ordem estrita (pai imediatamente seguido de todos os
+    filhos, contíguos). Se um sistema exportar em outra ordem, o algoritmo
+    pode "fechar" grupos errados — sem dar erro nenhum na hora, só devolvendo
+    um conjunto de folhas que não fecha a conta. Essa validação pega
+    exatamente esse caso: se não bater, é sinal de que a suposição de
+    ordem não valeu pra este PDF, e é melhor falhar alto do que devolver
+    lançamentos com valor errado.
+    """
+    total_devedor = sum(conta.saldo_atual for conta, _ in folhas if conta.natureza == "D")
+    total_credor = sum(conta.saldo_atual for conta, _ in folhas if conta.natureza == "C")
+    if abs(total_devedor - total_credor) >= EPS_IDENTIDADE_CONTABIL:
+        raise LeitorBalanceteError(
+            "A reconstrução da hierarquia de contas não fechou: total devedor "
+            f"(R$ {total_devedor:,.2f}) não bate com o total credor "
+            f"(R$ {total_credor:,.2f}) entre as contas analíticas identificadas. "
+            "Isso normalmente significa que este balancete lista as contas em "
+            "uma ordem diferente da esperada (pai nem sempre seguido pelos "
+            "filhos) — os números não são confiáveis; não prossiga sem revisar "
+            "o layout deste PDF."
+        )
+
+
 def _inferir_categoria(*textos: str) -> str:
     junto = " ".join(_normalizar(t) for t in textos)
     for palavras, categoria in _PALAVRAS_CATEGORIA:
@@ -266,7 +437,11 @@ def _inferir_categoria(*textos: str) -> str:
     return "outros"
 
 
-_PADRAO_PALAVRA_RECEITA = re.compile(r"\b(receita|resultado bruto|venda)")
+# \b evita falso positivo de "venda" dentro de "revenda" (conta de estoque, não receita).
+_PADRAO_PALAVRA_RECEITA = re.compile(
+    r"\b(receita|resultado bruto|venda|faturamento|servicos? prestados?)"
+)
+_PALAVRAS_DESPESA = ("despesa", "custo", "cpv", "cmv")
 
 
 def _classificar(conta: ContaBalancete, ancestrais: list[str]) -> Optional[tuple[str, str]]:
@@ -277,11 +452,10 @@ def _classificar(conta: ContaBalancete, ancestrais: list[str]) -> Optional[tuple
     caminho = " ".join(_normalizar(a) for a in ancestrais)
     descricao_norm = _normalizar(conta.descricao)
 
-    # \b evita falso positivo de "venda" dentro de "revenda" (conta de estoque, não receita).
     if _PADRAO_PALAVRA_RECEITA.search(caminho) or _PADRAO_PALAVRA_RECEITA.search(descricao_norm):
         return "receita", _inferir_categoria(conta.descricao, *ancestrais)
 
-    if any(p in caminho for p in ("despesa", "custo")):
+    if any(p in caminho for p in _PALAVRAS_DESPESA):
         return "despesa", _inferir_categoria(conta.descricao, *ancestrais)
 
     if any("fornecedor" in _normalizar(a) for a in ancestrais):
@@ -335,24 +509,151 @@ def processar_texto_balancete(texto: str) -> pd.DataFrame:
     """Núcleo puro (sem I/O) do parser: texto extraído do PDF -> lançamentos."""
     contas = _parse_linhas_texto(texto)
     if not contas:
+        # detect_document_type (dados.utils, do pipeline do Eduardo) ajuda a
+        # diferenciar "não é nem um documento contábil" de "é um documento
+        # contábil, mas o layout de colunas não é nenhum dos cadastrados".
+        tipo_detectado = detect_document_type(texto)
+        if tipo_detectado == "DESCONHECIDO":
+            raise LeitorBalanceteError(
+                "Não foi possível reconhecer nenhuma conta no texto do balancete, "
+                "e o documento não parece ser um Balancete/DRE/Balanço "
+                "Patrimonial/Livro Razão (nenhum desses termos aparece no texto). "
+                "Confira se o arquivo enviado é mesmo o documento contábil certo."
+            )
         raise LeitorBalanceteError(
-            "Não foi possível reconhecer nenhuma conta no texto do balancete. "
-            "O layout deste PDF pode ser diferente do esperado."
+            f"O documento foi identificado como {tipo_detectado}, mas nenhuma "
+            "conta pôde ser extraída com os layouts de coluna conhecidos "
+            "(_LAYOUTS_CONHECIDOS). Provavelmente vem de um sistema contábil "
+            "diferente do testado — é preciso cadastrar um novo layout a "
+            "partir deste exemplo."
         )
     _validar_contas(contas)
     folhas = _identificar_folhas(contas)
+    _validar_identidade_contabil(folhas)
     data_lancamento = _extrair_data_periodo_de_texto(texto)
     return _montar_dataframe(folhas, data_lancamento)
+
+
+# Nº mínimo de caracteres não-espaço pra considerar que o PDF já tem texto
+# extraível de verdade; abaixo disso, tenta OCR (documento escaneado/imagem).
+_MINIMO_CARACTERES_TEXTO_PDF = 20
+
+
+def _texto_insuficiente(texto: str) -> bool:
+    return len(re.sub(r"\s", "", texto)) < _MINIMO_CARACTERES_TEXTO_PDF
+
+
+# Locais comuns onde o instalador do Tesseract no Windows coloca o binário,
+# quando ele não fica no PATH do processo Python (ex.: acabou de instalar
+# na mesma sessão, ou instalado por um instalador que não atualiza o PATH
+# de processos já abertos).
+_CAMINHOS_TESSERACT_WINDOWS = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+)
+
+
+def _configurar_caminho_tesseract(pytesseract_modulo) -> None:
+    """Se `tesseract` não estiver no PATH, tenta os locais de instalação
+    padrão do Windows antes de desistir (ver `_extrair_texto_via_ocr`)."""
+    try:
+        pytesseract_modulo.get_tesseract_version()
+        return  # já está no PATH, nada a fazer
+    except Exception:
+        pass
+    for caminho in _CAMINHOS_TESSERACT_WINDOWS:
+        if Path(caminho).exists():
+            pytesseract_modulo.pytesseract.tesseract_cmd = caminho
+            return
+
+
+def _idioma_ocr_disponivel(pytesseract_modulo) -> str:
+    """Usa português se o pacote de idioma estiver instalado; senão inglês
+    (sempre disponível em qualquer instalação do Tesseract) — degrada a
+    qualidade do reconhecimento de acentos, mas não impede o OCR de rodar.
+    """
+    try:
+        idiomas = pytesseract_modulo.get_languages(config="")
+    except Exception:
+        return "eng"
+    return "por" if "por" in idiomas else "eng"
+
+
+def _extrair_texto_via_ocr(caminho: Path | str) -> str:
+    """Fallback via OCR pra PDF sem camada de texto (documento escaneado/foto).
+
+    Renderiza cada página como imagem (pypdfium2 — não depende do poppler)
+    e roda reconhecimento óptico de caracteres (pytesseract/Tesseract).
+    Levanta `LeitorBalanceteError` com mensagem acionável se as bibliotecas
+    Python ou o motor Tesseract não estiverem instalados, em vez de um
+    traceback confuso.
+    """
+    try:
+        import pypdfium2 as pdfium
+        import pytesseract
+    except ImportError as erro:
+        raise LeitorBalanceteError(
+            "Este PDF não tem texto extraível (parece ser um documento "
+            "escaneado/imagem). Suporte a OCR requer as bibliotecas "
+            "pypdfium2 e pytesseract (pip install pypdfium2 pytesseract)."
+        ) from erro
+
+    _configurar_caminho_tesseract(pytesseract)
+    try:
+        pytesseract.get_tesseract_version()
+    except Exception as erro:
+        raise LeitorBalanceteError(
+            "Este PDF não tem texto extraível (parece ser um documento "
+            "escaneado/imagem) e o motor de OCR Tesseract não foi encontrado "
+            "no sistema. Instale o Tesseract OCR "
+            "(https://github.com/tesseract-ocr/tesseract#installing-tesseract) "
+            "e tente novamente."
+        ) from erro
+
+    idioma = _idioma_ocr_disponivel(pytesseract)
+    documento = pdfium.PdfDocument(str(Path(caminho)))
+    paginas_texto = []
+    for pagina in documento:
+        # scale=3 (~216dpi numa página A4) — resolução necessária pro OCR
+        # reconhecer números pequenos de balancete com uma taxa de acerto
+        # razoável; menos que isso costuma confundir dígitos parecidos.
+        imagem = pagina.render(scale=3).to_pil()
+        # --psm 6 ("bloco único de texto"): sem isso, o Tesseract tende a
+        # detectar cada coluna da tabela como um bloco de texto separado e
+        # devolve os números agrupados por coluna (todo "Saldo Anterior"
+        # primeiro, depois todo "Débito"...) em vez de linha por linha —
+        # o que quebra completamente o parser, que espera uma conta por linha.
+        paginas_texto.append(
+            pytesseract.image_to_string(imagem, lang=idioma, config="--psm 6")
+        )
+    return "\n".join(paginas_texto)
+
+
+def _extrair_texto_pdf(caminho: Path | str) -> str:
+    leitor = pypdf.PdfReader(str(Path(caminho)))
+    texto = "\n".join(pagina.extract_text() or "" for pagina in leitor.pages)
+    if _texto_insuficiente(texto):
+        texto = _extrair_texto_via_ocr(caminho)
+    return texto
 
 
 def ler_balancete_pdf(caminho: Path | str) -> pd.DataFrame:
     """Lê um balancete em PDF e devolve o DataFrame de lançamentos do motor.
 
     Levanta `LeitorBalanceteError` com uma mensagem acionável quando o PDF
-    não tem o layout esperado (não é possível reconhecer contas, ou os
-    valores não reconciliam).
+    não tem o layout esperado (não é possível reconhecer contas, os valores
+    não reconciliam, ou a hierarquia de contas não fecha).
     """
-    caminho = Path(caminho)
-    leitor = pypdf.PdfReader(str(caminho))
-    texto = "\n".join(pagina.extract_text() or "" for pagina in leitor.pages)
-    return processar_texto_balancete(texto)
+    return processar_texto_balancete(_extrair_texto_pdf(caminho))
+
+
+def extrair_metadados_balancete(caminho: Path | str) -> dict[str, Optional[str]]:
+    """Extrai metadados do cabeçalho do balancete (empresa, CNPJ, período, ...).
+
+    Reaproveita `dados.utils.extract_header_metadata` (pipeline do Eduardo) —
+    não faz parsing de contas, só do cabeçalho, então funciona mesmo que o
+    layout de colunas do corpo do balancete não seja um dos suportados.
+    Pensado pra exibição na interface (ex.: confirmar "Empresa: X, CNPJ: Y"
+    logo após o upload), não é usado pelo motor de análise.
+    """
+    return extract_header_metadata(_extrair_texto_pdf(caminho))
