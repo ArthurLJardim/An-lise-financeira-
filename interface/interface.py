@@ -210,9 +210,30 @@ with st.sidebar:
 # Interface principal
 
 
-st.title("Bot de Análise Financeira e Compras")
+st.title("💰 Bot de Análise Financeira e Compras")
 
 if st.session_state.dados is None:
+    st.markdown(
+        """
+Envie o **balancete contábil** da sua empresa (o PDF exportado direto do
+sistema contábil) e o bot faz a análise sozinho — não precisa preparar
+planilha nem categorizar nada na mão.
+
+**O que o bot faz:**
+- Lê o balancete e identifica automaticamente receitas e despesas por categoria
+  (mercadorias, energia, folha, transporte, serviços, impostos, entre outras).
+- Calcula se o período teve **lucro ou prejuízo** e a margem.
+- Mostra **onde a empresa mais gasta**, por categoria e por fornecedor.
+- Compara com um orçamento e/ou o balancete de um período anterior (opcional)
+  e gera **alertas** quando algum gasto sai do esperado.
+- Sugere fornecedores alternativos e onde há espaço pra economizar.
+
+Antes de rodar a análise, você revisa numa tabela editável como cada
+lançamento foi classificado — a classificação é automática por palavra-chave
+e pode errar em planos de conta fora do usual, então dá pra corrigir ali
+mesmo antes de continuar.
+"""
+    )
     st.info(
         "👈 Envie um balancete (PDF) ou uma planilha de lançamentos já tratados "
         "na barra lateral para começar a análise."
