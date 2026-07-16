@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+main.py
+=======
+Ponto de entrada do Analisador Inteligente de Balancetes.
+
+USO BÁSICO
+----------
+    python main.py caminho/do/balancete.pdf
+
+Gera automaticamente, dentro de `relatorios/`:
+    - um relatório .xlsx completo (várias abas, gráficos, formatação)
+    - gráficos .png (ranking de fornecedores e categorias)
+    - um relatório .txt (a mesma saída que aparece no terminal)
+E imprime o relatório resumido diretamente no terminal.
+
+COMPARANDO DOIS OU MAIS PERÍODOS
+---------------------------------
+    python main.py balancete_2024.pdf balancete_2025.pdf
+
+Quando mais de um arquivo é informado, os balancetes são ordenados pelo
+período (mais antigo primeiro) e o relatório passa a incluir uma aba/seção
+extra de comparação: quais fornecedores cresceram, caíram, surgiram ou
+desapareceram entre o período mais antigo e o mais recente informados.
+
+OUTRAS OPÇÕES
+-------------
+    --saida PASTA        Pasta onde salvar os relatórios (padrão: ./relatorios)
+    --top N               Quantos fornecedores mostrar no ranking do console (padrão: 15)
+    --sem-excel            Não gera o arquivo .xlsx
+    --sem-graficos          Não gera os arquivos .png
+    --sem-console            Não imprime o relatório no terminal (útil em lote/CI)
+
+Rode `python main.py --help` para ver tudo.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import List, Optional
+
+from analisador import AnalisadorFinanceiro, ResultadoAnalise, comparar_periodos
+from extrator import ErroExtracao, ExtratorBalancete
+from graficos import GeradorGraficos
+from recomendador import MotorDeRecomendacoes
+from relatorio_console import RelatorioConsole
+from relatorio_excel import RelatorioExcel
+
+
+def _analisar_argumentos(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="analisador_balancete",
+        description=(
+            "Lê um ou mais balancetes em PDF, identifica fornecedores e "
+            "gastos, e gera análise financeira com recomendações."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "arquivos", nargs="+", metavar="BALANCETE.pdf",
+        help="Um ou mais arquivos PDF de balancete. Informe 2+ para comparar períodos.",
+    )
+    parser.add_argument(
+        "--saida", default="relatorios", metavar="PASTA",
+        help="Pasta onde salvar os relatórios gerados (padrão: ./relatorios)",
+    )
+    parser.add_argument(
+        "--top", type=int, default=15, metavar="N",
+        help="Quantos fornecedores mostrar no ranking do console (padrão: 15)",
+    )
+    parser.add_argument("--sem-excel", action="store_true", help="Não gera o arquivo .xlsx")
+    parser.add_argument("--sem-graficos", action="store_true", help="Não gera os arquivos .png")
+    parser.add_argument("--sem-console", action="store_true", help="Não imprime no terminal")
+    return parser.parse_args(argv)
+
+
+def _nome_seguro(texto: str) -> str:
+    """Deriva um nome de arquivo seguro a partir do nome da empresa."""
+    limpo = "".join(c if c.isalnum() or c in " _-" else "" for c in texto)
+    limpo = "_".join(limpo.split())
+    return limpo[:60] or "balancete"
+
+
+def executar(argv: Optional[List[str]] = None) -> int:
+    args = _analisar_argumentos(argv)
+    pasta_saida = Path(args.saida)
+
+    extrator = ExtratorBalancete()
+    analisador = AnalisadorFinanceiro()
+    motor_recomendacoes = MotorDeRecomendacoes()
+
+    analises: List[ResultadoAnalise] = []
+    for caminho in args.arquivos:
+        print(f"Lendo {caminho} ...", file=sys.stderr)
+        try:
+            balancete = extrator.extrair(caminho)
+        except ErroExtracao as erro:
+            print(f"\n[ERRO] {caminho}: {erro}\n", file=sys.stderr)
+            return 1
+        analises.append(analisador.analisar(balancete))
+
+    # Ordena por período (mais antigo primeiro) quando a data está disponível,
+    # preservando a ordem de entrada como critério de desempate.
+    analises.sort(
+        key=lambda a: (
+            a.balancete.empresa.periodo_fim or a.balancete.empresa.periodo_inicio
+            or __import__("datetime").date.min
+        )
+    )
+
+    analise_atual = analises[-1]
+    variacoes = None
+    if len(analises) >= 2:
+        variacoes = comparar_periodos(analises[-2], analises[-1])
+
+    recomendacoes = motor_recomendacoes.gerar(analise_atual, variacoes)
+
+    if not args.sem_console:
+        RelatorioConsole().imprimir(analise_atual, recomendacoes, top_n=args.top)
+
+    pasta_saida.mkdir(parents=True, exist_ok=True)
+    nome_base = _nome_seguro(analise_atual.balancete.empresa.nome)
+
+    arquivos_gerados: List[str] = []
+
+    caminhos_graficos: List[str] = []
+    if not args.sem_graficos:
+        gerador_graficos = GeradorGraficos(str(pasta_saida / "graficos"))
+        if gerador_graficos.disponivel:
+            caminhos_graficos = gerador_graficos.gerar_todos(analise_atual, variacoes)
+            arquivos_gerados.extend(caminhos_graficos)
+        else:
+            print(
+                "[aviso] matplotlib não está instalado — pulando geração de "
+                "gráficos .png (o restante do relatório funciona normalmente).",
+                file=sys.stderr,
+            )
+
+    if not args.sem_excel:
+        caminho_excel = pasta_saida / f"analise_{nome_base}.xlsx"
+        RelatorioExcel().gerar(
+            analise_atual, recomendacoes, str(caminho_excel),
+            variacoes=variacoes, caminhos_graficos=caminhos_graficos,
+        )
+        arquivos_gerados.append(str(caminho_excel))
+
+    caminho_txt = pasta_saida / f"relatorio_{nome_base}.txt"
+    caminho_txt.write_text(
+        RelatorioConsole().montar_texto(analise_atual, recomendacoes, top_n=args.top),
+        encoding="utf-8",
+    )
+    arquivos_gerados.append(str(caminho_txt))
+
+    if arquivos_gerados:
+        print("\nArquivos gerados:", file=sys.stderr)
+        for caminho in arquivos_gerados:
+            print(f"  - {caminho}", file=sys.stderr)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(executar())
