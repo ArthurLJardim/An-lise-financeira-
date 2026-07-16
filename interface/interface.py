@@ -398,9 +398,7 @@ st.subheader("📄 Exportar Resultados")
 st.caption(
     "O motor já tem `motor_analise.relatorio.gerar_relatorio(resultado)` "
     "para gerar um .txt (ver CONTRATO_DADOS.md §6). Os botões abaixo ainda "
-    "precisam ser ligados a isso (e a um exportador em Excel/PDF, se o "
-    "grupo quiser essas opções além do relatório em texto)."
-)
+    "precisam ser ligados a isso"
 col_a, col_b = st.columns(2)
 col_a.button("⬇️ Exportar análise (Excel)", disabled=True, use_container_width=True)
 col_b.button("⬇️ Gerar relatório final (PDF/TXT)", disabled=True, use_container_width=True)
