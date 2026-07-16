@@ -1,0 +1,35 @@
+       ======================================
+RELATÓRIO DE ANÁLISE FINANCEIRA — 2025
+======================================
+Gerado em 08/07/2026 21:44
+
+1. RESULTADO DO PERÍODO
+   Situação: LUCRO
+   Receita total: R$ 92.553,10
+   Despesa total: R$ 3.500,48
+   Resultado do período: R$ 89.052,62
+   Margem: 96.2%
+
+2. RESUMO DE GASTOS
+   Gasto total analisado: R$ 3.500,48
+   Lançamentos de despesa analisados: 4
+   Nenhum aumento de gasto identificado no período.
+   Alertas gerados: 0 (crítica: 0, alta: 0, média: 0, baixa: 0)
+
+3. ONDE A EMPRESA GASTA MAIS
+   Por categoria:
+   1. mercadorias: R$ 3.185,48 (91.0% do total)
+   2. servicos: R$ 315,00 (9.0% do total)
+   Por fornecedor:
+   1. HIGH-TECH INFORMATICA INDUSTRIA E COMERCIO LTDA: R$ 1.699,28 (48.5% do total)
+   2. OBJETIVA EDICOES EMPRESARIAIS LTDA: R$ 1.366,20 (39.0% do total)
+   3. SOLUTEC TECNOLOGIA E SERVICOS EIRELI.: R$ 315,00 (9.0% do total)
+   4. 49526436 ENEAS MASCARENHAS BITTENCOURT FILHO: R$ 120,00 (3.4% do total)
+
+4. ALERTAS DE GASTOS
+   Nenhum alerta identificado neste período.
+
+5. ONDE A EMPRESA PODE ECONOMIZAR
+   Nenhuma categoria com desvio grave o suficiente para ação imediata neste período.
+   (Recomendações preliminares baseadas nos alertas. Sugestões de fornecedores
+   alternativos e estimativa de economia são geradas pelo módulo de fornecedores.)
