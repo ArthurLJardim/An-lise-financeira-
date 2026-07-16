@@ -7,6 +7,27 @@ energia, aluguel, folha, transporte, serviços), compara com histórico ou
 orçamento e aponta onde a empresa gasta mais do que o esperado, sugerindo
 renegociação com fornecedores e fornecedores alternativos.
 
+## Como testar (professor)
+
+Forma mais simples, sem digitar comando nenhum:
+
+1. Instale as dependências uma vez, dando duplo-clique em
+   [`instalar_dependencias.bat`](instalar_dependencias.bat) (precisa de
+   [Python](https://www.python.org/downloads/) instalado, com a opção "Add
+   Python to PATH" marcada na instalação).
+2. Coloque um balancete em **PDF** dentro da pasta [`entrada/`](entrada/).
+3. Dê duplo-clique em [`rodar_bot.bat`](rodar_bot.bat).
+
+O bot lê o balancete, analisa e abre um relatório em texto (lucro/prejuízo,
+onde a empresa mais gasta, alertas, sugestões de economia) direto no Bloco
+de Notas — nenhuma planilha precisa ser preparada antes.
+
+Quem preferir rodar por terminal (ex.: no VS Code, `` Ctrl+` ``) pode usar
+`python rodar_bot.py`, ou `python analisar_documento.py caminho/balancete.pdf`
+para mais opções (orçamento, histórico, rótulo de período — ver seção
+"Relatório em tópicos" abaixo). Também dá pra rodar a interface visual com
+`streamlit run interface/interface.py` (abre no navegador, local).
+
 ## Grupo — Análise Financeira
 
 | Integrante                  | RA         | Módulo                                            |

@@ -7,3 +7,8 @@ venv/
 .vscode/
 .idea/
 relatorios/
+
+# balancetes reais colocados aqui pra rodar o bot (rodar_bot.py) não devem
+# ir pro repositório — é dado de empresa de verdade, não fixture de teste.
+entrada/*
+!entrada/.gitkeep
